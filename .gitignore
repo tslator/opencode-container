@@ -42,3 +42,10 @@ worktrees/
 
 # Secrets (API keys, credentials)
 secrets/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
+*.gate.lock*
