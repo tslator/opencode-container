@@ -41,7 +41,7 @@ The OpenCode TUI starts inside the container. Your current directory is mounted 
 The `bin/opencode-container` script is the recommended way to run OpenCode Container. It:
 
 - Picks an engine: `$CONTAINER_ENGINE` if set, else `podman`, else `docker`
-- Persists all data to `~/.opencode-container/` (sessions, cache, settings)
+- Persists all data to `~/.opencode-container/` (sessions, cache, settings); session history is isolated per workspace directory (stored under `~/.opencode-container/projects/<name>-<hash>/`)
 - Reads secrets from `~/.opencode-container/secrets/`
 - Uses the current directory as the workspace
 - Works from any directory once added to your PATH
@@ -171,10 +171,13 @@ When using the wrapper script (`bin/opencode-container`):
 
 | Data | Location | Description |
 |------|----------|-------------|
-| **Home Directory** | `~/.opencode-container/` | OpenCode cache, plugins, settings, sessions |
+| **Home Directory** | `~/.opencode-container/` | OpenCode cache, plugins, settings |
+| **Sessions** | `~/.opencode-container/projects/<name>-<hash>/` | Per-workspace session store (keyed by workspace path) |
 | **Secrets** | `~/.opencode-container/secrets/` | API keys and credentials |
 | **Config** | `./config/` (this repo) | OpenCode configuration, MCP servers, custom skills |
 | **Workspace** | Current directory | Your project files |
+
+Because every workspace mounts at `/workspace` inside the container, OpenCode would otherwise merge all projects' sessions into one list. The launcher therefore mounts a dedicated session store per workspace path at `/app/.local/share`. Older versions kept a single shared store at `~/.opencode-container/.local/share/opencode/`; that history is no longer shown and can be deleted once you no longer need it.
 
 ## Advanced Usage
 

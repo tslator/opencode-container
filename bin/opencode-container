@@ -169,6 +169,17 @@ if [ ! -d "$WORKSPACE" ]; then
     echo "Error: workspace path is not an existing directory: $WORKSPACE" >&2
     exit 1
 fi
+WORKSPACE="$(readlink -f "$WORKSPACE")"
+
+# Per-project session store. OpenCode keeps sessions in XDG_DATA_HOME
+# (/app/.local/share) and keys projects by workspace path; since every host
+# directory mounts at /workspace, one shared store would merge all projects'
+# session lists. Mount a store per workspace path instead.
+ws_hash="$(printf '%s' "$WORKSPACE" | sha1sum 2>/dev/null | cut -c1-12)"
+[ -n "$ws_hash" ] || ws_hash="$(printf '%s' "$WORKSPACE" | cksum | tr -d ' ')"
+ws_slug="$(basename "$WORKSPACE" | tr -c 'a-zA-Z0-9._\n-' '-')-$ws_hash"
+ws_data_dir="$ocd_dir/projects/$ws_slug"
+mkdir -p "$ws_data_dir"
 
 reject_proxy_credentials() {
     case "$1" in
@@ -240,5 +251,6 @@ fi
     -v "$HOME/.opencode-container:/app:rw,Z" \
     -v "$HOME/.opencode-container/config:/app/.config/opencode:rw,Z" \
     -v "$HOME/.opencode-container/secrets:/run/secrets:ro,Z" \
+    -v "$ws_data_dir:/app/.local/share:rw,Z" \
     -v "$WORKSPACE:/workspace:rw,Z" \
     opencode-container:latest "$@"
