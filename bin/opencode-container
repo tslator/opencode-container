@@ -171,15 +171,24 @@ if [ ! -d "$WORKSPACE" ]; then
 fi
 WORKSPACE="$(readlink -f "$WORKSPACE")"
 
-# Per-project session store. OpenCode keeps sessions in XDG_DATA_HOME
-# (/app/.local/share) and keys projects by workspace path; since every host
-# directory mounts at /workspace, one shared store would merge all projects'
-# session lists. Mount a store per workspace path instead.
+# Per-project state. OpenCode keeps sessions in XDG_DATA_HOME
+# (/app/.local/share) and TUI tab/prompt state in XDG_STATE_HOME
+# (/app/.local/state), and both key projects by cwd; since every host directory
+# mounts at /workspace, shared dirs would merge session lists and restore
+# another workspace's session tab on startup. Mount one pair per workspace path.
 ws_hash="$(printf '%s' "$WORKSPACE" | sha1sum 2>/dev/null | cut -c1-12)"
 [ -n "$ws_hash" ] || ws_hash="$(printf '%s' "$WORKSPACE" | cksum | tr -d ' ')"
 ws_slug="$(basename "$WORKSPACE" | tr -c 'a-zA-Z0-9._\n-' '-')-$ws_hash"
-ws_data_dir="$ocd_dir/projects/$ws_slug"
-mkdir -p "$ws_data_dir"
+ws_root="$ocd_dir/projects/$ws_slug"
+# One-time migration from the flat layout (store lived in $ws_root directly)
+if [ -d "$ws_root/opencode" ] && [ ! -d "$ws_root/share" ]; then
+    mkdir -p "$ws_root/share"
+    for entry in "$ws_root"/*; do
+        [ "$entry" = "$ws_root/share" ] && continue
+        mv "$entry" "$ws_root/share/"
+    done
+fi
+mkdir -p "$ws_root/share" "$ws_root/state"
 
 reject_proxy_credentials() {
     case "$1" in
@@ -251,6 +260,7 @@ fi
     -v "$HOME/.opencode-container:/app:rw,Z" \
     -v "$HOME/.opencode-container/config:/app/.config/opencode:rw,Z" \
     -v "$HOME/.opencode-container/secrets:/run/secrets:ro,Z" \
-    -v "$ws_data_dir:/app/.local/share:rw,Z" \
+    -v "$ws_root/share:/app/.local/share:rw,Z" \
+    -v "$ws_root/state:/app/.local/state:rw,Z" \
     -v "$WORKSPACE:/workspace:rw,Z" \
     opencode-container:latest "$@"

@@ -23,9 +23,12 @@ grep -F "$TEST_DIR/home/.opencode-container:/app:rw,Z" "$TEST_DIR/args"
 grep -F "$TEST_DIR/home/.opencode-container/config:/app/.config/opencode:rw,Z" "$TEST_DIR/args"
 grep -F "$TEST_DIR/home/.opencode-container/secrets:/run/secrets:ro,Z" "$TEST_DIR/args"
 grep -F "$TEST_DIR/workspace:/workspace:rw,Z" "$TEST_DIR/args"
-# per-project data dir mounted over /app/.local/share (sessions isolated per workspace)
-grep -E '^[^ ]*/home/.opencode-container/projects/workspace-[0-9a-f]+:/app/.local/share:rw,Z$' "$TEST_DIR/args"
+# per-project data and state dirs mounted over /app/.local/{share,state}
+# (sessions and TUI tabs isolated per workspace)
+grep -E '^[^ ]*/home/.opencode-container/projects/workspace-[0-9a-f]+/share:/app/.local/share:rw,Z$' "$TEST_DIR/args"
+grep -E '^[^ ]*/home/.opencode-container/projects/workspace-[0-9a-f]+/state:/app/.local/state:rw,Z$' "$TEST_DIR/args"
 [ -d "$TEST_DIR/home/.opencode-container/projects" ]
+[ -n "$(find "$TEST_DIR/home/.opencode-container/projects" -type d -name state -print -quit)" ]
 
 grep -Fx -- 'OPENCODE_ENABLE_EXA=1' "$TEST_DIR/args"
 grep -Fx -- 'OPENCODE_EXPERIMENTAL=1' "$TEST_DIR/args"

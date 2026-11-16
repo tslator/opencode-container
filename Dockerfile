@@ -203,7 +203,7 @@ RUN cd /opt/runtime-rootfs && \
     rm -rf lib lib64 && \
     [ -L usr/bin/sh ] && [ -x ".$(readlink usr/bin/sh)" ]
 
-RUN mkdir -p /opt/runtime-rootfs/app/.local/share /opt/runtime-rootfs/app/.config/opencode /opt/runtime-rootfs/app/.cache && \
+RUN mkdir -p /opt/runtime-rootfs/app/.local/share /opt/runtime-rootfs/app/.local/state /opt/runtime-rootfs/app/.config/opencode /opt/runtime-rootfs/app/.cache && \
     chown -R ${USER_UID}:${USER_GID} /opt/runtime-rootfs/app && \
     printf 'opencode:x:%s:%s:OpenCode User:/app:/usr/bin/python3\n' "${USER_UID}" "${USER_GID}" >> /opt/runtime-rootfs/etc/passwd && \
     printf 'opencode:x:%s:\n' "${USER_GID}" >> /opt/runtime-rootfs/etc/group
@@ -219,6 +219,7 @@ ENV HOME=/app
 ENV XDG_CONFIG_HOME=/app/.config
 ENV OPENCODE_CONFIG_DIR=/app/.config/opencode
 ENV XDG_DATA_HOME=/app/.local/share
+ENV XDG_STATE_HOME=/app/.local/state
 ENV PATH=/usr/local/bin:/usr/bin
 ENV NPM_CONFIG_CAFILE=/etc/ssl/certs/ca-certificates.crt
 
