@@ -9,61 +9,86 @@
 #   -w, --websearch     Enable web search (sets OPENCODE_ENABLE_EXA=1)
 #   -e, --experimental  Enable experimental features (sets OPENCODE_EXPERIMENTAL=1 and OPENCODE_ENABLE_EXPERIMENTAL_MODELS=1)
 #   -u, --update-config Overwrite ~/.opencode-container/config/ files with repo versions
+#   --herdr             Start OpenCode inside a herdr pane (herdr multiplexer in image)
+#   --beads             Run `bd init` on first launch in workspaces without .beads/
 #   --memory            Set memory limit (default: 4g, e.g., --memory 8g)
 #   --cpus              Set CPU count (default: 4, e.g., --cpus 8)
 #   --host-access       Add the engine's host alias so the container can reach host services
+#   --opencode-help     Show OpenCode's own CLI options (runs the container with --help)
+#   -h, --help          Show this help
 #
 # Any other flags/commands (e.g. -m/--model, -c/--continue, -s/--session,
 # auth logout, run "msg") are passed through to the OpenCode CLI.
 
 set -e
 
+usage() {
+    cat <<'EOF'
+opencode-container — run OpenCode in a container
+
+Usage: opencode-container [options] [opencode args...]
+
+Options:
+  -w, --websearch      Enable web search (sets OPENCODE_ENABLE_EXA=1)
+  -e, --experimental   Enable experimental features (sets OPENCODE_EXPERIMENTAL=1
+                       and OPENCODE_ENABLE_EXPERIMENTAL_MODELS=1)
+  -u, --update-config  Overwrite ~/.opencode-container/config/ files with repo versions
+      --herdr          Start OpenCode inside a herdr pane (herdr multiplexer in image)
+      --beads          Run `bd init` on first launch in workspaces without .beads/
+      --memory SIZE    Set memory limit (default: 4g, e.g., --memory 8g)
+      --cpus N         Set CPU count (default: 4, e.g., --cpus 8)
+      --host-access    Add the engine's host alias so the container can reach host services
+      --opencode-help  Show OpenCode's own CLI options (runs the container with --help)
+  -h, --help           Show this help
+
+Environment:
+  CONTAINER_ENGINE           podman or docker (auto-detected if unset)
+  OPENCODE_WORKSPACE         workspace directory (default: current directory)
+  MEMORY_LIMIT               default for --memory
+  CPU_LIMIT                  default for --cpus
+  OPENCODE_CONTAINER_HERDR   set to 1 to enable --herdr by default
+  OPENCODE_CONTAINER_BEADS   set to 1 to enable --beads by default
+
+Any other flags/commands (e.g. -m/--model, -c/--continue, -s/--session,
+auth logout, run "msg") are passed through to the OpenCode CLI.
+Run `opencode-container --opencode-help` to see OpenCode's own options.
+EOF
+}
+
 UPDATE_CONFIG=0
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-ENGINE="${CONTAINER_ENGINE:-}"
-if [ -z "$ENGINE" ]; then
-    if command -v podman >/dev/null 2>&1; then
-        ENGINE=podman
-    elif command -v docker >/dev/null 2>&1; then
-        ENGINE=docker
-    else
-        echo "Error: no container engine found; install podman/docker or set CONTAINER_ENGINE" >&2
-        exit 1
-    fi
-fi
-
-ocd_dir="$HOME/.opencode-container"
-# One-time migration from the pre-rename docker-only state dir
-if [ -d "$HOME/.opencode-docker" ] && [ ! -d "$ocd_dir" ]; then
-    mv "$HOME/.opencode-docker" "$ocd_dir"
-fi
-repo_dir="${OPENCODE_CONTAINER_REPO:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-
-mkdir -p "$ocd_dir/config" "$ocd_dir/secrets"
-chmod 700 "$ocd_dir" "$ocd_dir/config" "$ocd_dir/secrets"
-
-# Remove env files created by older launcher versions; bootstrap reads mounted secrets.
-rm -f "$ocd_dir/.env"
-
-# Default workspace to current directory if not specified
-WORKSPACE="${OPENCODE_WORKSPACE:-$(pwd)}"
-
-if [ ! -d "$WORKSPACE" ]; then
-    echo "Error: workspace path is not an existing directory: $WORKSPACE" >&2
-    exit 1
-fi
-
 ENV_ARGS=()
+MOUNT_ARGS=()
 HOST_ARGS=()
 HOST_ACCESS=0
 MEMORY_LIMIT="${MEMORY_LIMIT:-4g}"
 CPU_LIMIT="${CPU_LIMIT:-4}"
+HERDR_OPTIN="${OPENCODE_CONTAINER_HERDR:-0}"
+BEADS_OPTIN="${OPENCODE_CONTAINER_BEADS:-0}"
+OPENCODE_HELP=0
 
+# Parse wrapper options first so -h/--help works without an engine or state dirs.
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --opencode-help)
+            OPENCODE_HELP=1
+            shift
+            ;;
         -u|--update-config)
             UPDATE_CONFIG=1
+            shift
+            ;;
+        --herdr)
+            HERDR_OPTIN=1
+            shift
+            ;;
+        --beads)
+            BEADS_OPTIN=1
             shift
             ;;
         -w|--websearch)
@@ -86,10 +111,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         --host-access)
             HOST_ACCESS=1
-            case "$ENGINE" in
-                podman) HOST_ARGS+=(--add-host "host.containers.internal:host-gateway") ;;
-                *)      HOST_ARGS+=(--add-host "host.docker.internal:host-gateway") ;;
-            esac
             shift
             ;;
         *)
@@ -97,6 +118,57 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+ENGINE="${CONTAINER_ENGINE:-}"
+if [ -z "$ENGINE" ]; then
+    if command -v podman >/dev/null 2>&1; then
+        ENGINE=podman
+    elif command -v docker >/dev/null 2>&1; then
+        ENGINE=docker
+    else
+        echo "Error: no container engine found; install podman/docker or set CONTAINER_ENGINE" >&2
+        exit 1
+    fi
+fi
+
+if [ "$HOST_ACCESS" = 1 ]; then
+    case "$ENGINE" in
+        podman) HOST_ARGS+=(--add-host "host.containers.internal:host-gateway") ;;
+        *)      HOST_ARGS+=(--add-host "host.docker.internal:host-gateway") ;;
+    esac
+fi
+
+# --opencode-help: show the OpenCode CLI help from the image itself; skip
+# state-dir setup, config copy, proxy forwarding, and secrets since help
+# needs none of them. No --workdir: podman rejects a workdir missing from
+# the image, and help output does not depend on the working directory.
+if [ "$OPENCODE_HELP" = 1 ]; then
+    exec "$ENGINE" run --rm -i opencode-container:latest --help
+fi
+
+ocd_dir="$HOME/.opencode-container"
+# One-time migration from the pre-rename docker-only state dir
+if [ -d "$HOME/.opencode-docker" ] && [ ! -d "$ocd_dir" ]; then
+    mv "$HOME/.opencode-docker" "$ocd_dir"
+fi
+repo_dir="${OPENCODE_CONTAINER_REPO:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+
+# .config must exist before the engine mounts config at /app/.config/opencode;
+# otherwise the engine creates it as container-root (uid 100000) and herdr
+# cannot create /app/.config/herdr later.
+mkdir -p "$ocd_dir/.config" "$ocd_dir/config" "$ocd_dir/secrets"
+chmod 700 "$ocd_dir" "$ocd_dir/config" "$ocd_dir/secrets"
+
+# Remove env files created by older launcher versions; bootstrap reads mounted secrets.
+rm -f "$ocd_dir/.env"
+
+# Default workspace to current directory if not specified
+WORKSPACE="${OPENCODE_WORKSPACE:-$(pwd)}"
+
+if [ ! -d "$WORKSPACE" ]; then
+    echo "Error: workspace path is not an existing directory: $WORKSPACE" >&2
+    exit 1
+fi
 
 reject_proxy_credentials() {
     case "$1" in
@@ -124,6 +196,17 @@ EFF_NO_PROXY="${NO_PROXY:-${no_proxy:-}}"
 [ -n "$EFF_HTTP_PROXY" ] && ENV_ARGS+=(-e "HTTP_PROXY=$EFF_HTTP_PROXY" -e "http_proxy=$EFF_HTTP_PROXY")
 [ -n "$EFF_HTTPS_PROXY" ] && ENV_ARGS+=(-e "HTTPS_PROXY=$EFF_HTTPS_PROXY" -e "https_proxy=$EFF_HTTPS_PROXY")
 [ -n "$EFF_NO_PROXY" ] && ENV_ARGS+=(-e "NO_PROXY=$EFF_NO_PROXY" -e "no_proxy=$EFF_NO_PROXY")
+
+# Forward the beads/herdr opt-ins (set via flags or host environment)
+[ "$HERDR_OPTIN" = 1 ] && ENV_ARGS+=(--env "OPENCODE_CONTAINER_HERDR=1")
+[ "$BEADS_OPTIN" = 1 ] && ENV_ARGS+=(--env "OPENCODE_CONTAINER_BEADS=1")
+
+# Dev override: binaries in ~/.opencode-container/bin take precedence over the
+# image-baked tools (bd, herdr) without rebuilding the image.
+if [ -d "$ocd_dir/bin" ]; then
+    MOUNT_ARGS+=(-v "$ocd_dir/bin:/opt/host-tools:ro,Z")
+    ENV_ARGS+=(--env "PATH=/opt/host-tools:/usr/local/bin:/usr/bin")
+fi
 
 if [ -t 0 ]; then
     RUN_FLAGS="-it"
@@ -153,6 +236,7 @@ fi
     --cpus="${CPU_LIMIT}" \
     "${ENV_ARGS[@]}" \
     "${HOST_ARGS[@]}" \
+    "${MOUNT_ARGS[@]}" \
     -v "$HOME/.opencode-container:/app:rw,Z" \
     -v "$HOME/.opencode-container/config:/app/.config/opencode:rw,Z" \
     -v "$HOME/.opencode-container/secrets:/run/secrets:ro,Z" \

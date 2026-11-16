@@ -53,11 +53,15 @@ The `bin/opencode-container` script is the recommended way to run OpenCode Conta
 | `-w`, `--websearch` | off | Enable Exa web search |
 | `-e`, `--experimental` | off | Enable experimental features and models |
 | `-u`, `--update-config` | off | Overwrite `~/.opencode-container/config/` with the repo's `config/` |
+| `--herdr` | off | Start OpenCode inside a [herdr](https://herdr.dev) pane (terminal multiplexer for agents) |
+| `--beads` | off | Run `bd init` automatically on first launch in a workspace without `.beads/` |
 | `--memory` | `4g` | Container memory limit |
 | `--cpus` | `4` | Container CPU count |
 | `--host-access` | off | Add the engine's host alias (`host.docker.internal` for Docker, `host.containers.internal` for Podman) so the container can reach host services (see [Accessing Host Services](#accessing-host-services)) |
+| `--opencode-help` | — | Show OpenCode's own CLI options (runs the container with `--help`) |
+| `-h`, `--help` | — | Show `opencode-container`'s own options |
 
-Everything else is passed through to the OpenCode CLI — including short flags like `-m`/`--model`, `-c`/`--continue`, and `-s`/`--session`, as well as subcommands. Run `opencode-container --help` to see them all.
+Everything else is passed through to the OpenCode CLI — including short flags like `-m`/`--model`, `-c`/`--continue`, and `-s`/`--session`, as well as subcommands. Run `opencode-container --opencode-help` to see them all.
 
 #### Adding to PATH
 
@@ -96,6 +100,23 @@ OPENCODE_WORKSPACE=/path/to/project opencode-container
 # Raise resource limits for a heavy session
 opencode-container --memory 8g --cpus 8
 ```
+
+### Bundled agent tools: beads and herdr
+
+The image ships pinned release binaries for [beads](https://github.com/gastownhall/beads) (`bd`, `beads`) and [herdr](https://herdr.dev) (`herdr`). Both are opt-in per launch:
+
+- **`--herdr`** (or `OPENCODE_CONTAINER_HERDR=1`): bootstrap starts a headless herdr server, creates a workspace for `/workspace`, launches OpenCode in a pane, and attaches the herdr client. From inside the session the agent can control panes via the bundled `herdr` skill. If any step fails (including no usable terminal), OpenCode starts directly instead.
+- **`--beads`** (or `OPENCODE_CONTAINER_BEADS=1`): on first launch in a workspace without `.beads/`, bootstrap runs `bd init` once, which creates `.beads/`, project `AGENTS.md`/`CLAUDE.md` integration, and the beads skill. Repeat launches skip it.
+
+To iterate on either binary without rebuilding the image, drop a replacement in `~/.opencode-container/bin/` (e.g. `~/.opencode-container/bin/herdr`); it is mounted read-only at `/opt/host-tools` and takes PATH precedence.
+
+After bumping `HERDR_VERSION` in the Dockerfile, regenerate the bundled skill: `make herdr-skill`.
+
+### Bundled terminal tools: lazygit and ttt
+
+The image also ships pinned release binaries for [lazygit](https://github.com/jesseduffield/lazygit) (git TUI client) and [ttt](https://tttedit.dev) (terminal text editor/IDE). Unlike beads and herdr, these need no launcher flags — they are always on `PATH` and run in any interactive TTY inside the container. Their runtime dependencies (`git`, `rg`) are already bundled. Configs are read from `$HOME/.config` (e.g. `/app/.config/lazygit`, `/app/.config/ttt`), which is backed by `~/.opencode-container/.config/` on the host and therefore persists between launches.
+
+To iterate on either binary without rebuilding the image, drop a replacement in `~/.opencode-container/bin/` (e.g. `~/.opencode-container/bin/lazygit`); it is mounted read-only at `/opt/host-tools` and takes PATH precedence.
 
 ## Security Features
 

@@ -1,4 +1,4 @@
-.PHONY: build build-latest shell clean tag-latest build-builder-tools prune-cache
+.PHONY: build build-latest shell clean tag-latest build-builder-tools prune-cache herdr-skill
 
 ENGINE ?= $(shell command -v podman >/dev/null 2>&1 && echo podman || echo docker)
 USER_UID := $(shell id -u)
@@ -33,6 +33,13 @@ ifndef VERSION
 	$(error VERSION is required. Usage: make tag-latest VERSION=2.0.9)
 endif
 	$(ENGINE) tag opencode-container:$(VERSION) opencode-container:latest
+
+# Regenerate the bundled herdr agent skill from the built image's pinned binary.
+# Run after bumping HERDR_VERSION, then commit config/skills/herdr/SKILL.md.
+herdr-skill:
+	@mkdir -p config/skills/herdr
+	@$(ENGINE) run --rm --entrypoint herdr opencode-container:latest --skill > config/skills/herdr/SKILL.md
+	@echo "regenerated config/skills/herdr/SKILL.md"
 
 build-latest:
 	@VERSION=$$(curl -fsSL https://registry.npmjs.org/%40opencode%2Fcli | jq -r '."dist-tags".latest') && \
