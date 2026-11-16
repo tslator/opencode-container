@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 
+import os
 import tempfile
 from pathlib import Path
 
 import bootstrap
 from bootstrap import load_secrets
+
+TERMINAL_SIZE = os.terminal_size((80, 24))
 
 
 def test_secret_loading() -> None:
@@ -85,6 +88,189 @@ def test_invalid_utf8_fails() -> None:
             raise AssertionError("expected invalid UTF-8 secret to fail")
 
 
+class FakeResult:
+    def __init__(self, returncode: int = 0, stdout: str = "") -> None:
+        self.returncode = returncode
+        self.stdout = stdout
+
+
+def test_beads_auto_init_skipped_without_flag() -> None:
+    calls: list[list[str]] = []
+    bootstrap.beads_auto_init(
+        {},
+        run=lambda cmd, **kwargs: calls.append(cmd) or FakeResult(),
+        which=lambda name: "/usr/local/bin/bd",
+        workspace=Path("/workspace"),
+    )
+    assert calls == []
+
+
+def test_beads_auto_init_runs_when_opted_in() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        workspace = Path(directory)
+        calls: list[tuple[list[str], object]] = []
+
+        def run(cmd, **kwargs):
+            calls.append((cmd, kwargs.get("cwd")))
+            return FakeResult()
+
+        bootstrap.beads_auto_init(
+            {"OPENCODE_CONTAINER_BEADS": "1"},
+            run=run,
+            which=lambda name: "/usr/local/bin/bd",
+            workspace=workspace,
+        )
+        assert calls == [(["bd", "init", "--quiet"], str(workspace))]
+
+
+def test_beads_auto_init_skipped_when_initialized() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        workspace = Path(directory)
+        (workspace / ".beads").mkdir()
+        calls: list[list[str]] = []
+        bootstrap.beads_auto_init(
+            {"OPENCODE_CONTAINER_BEADS": "1"},
+            run=lambda cmd, **kwargs: calls.append(cmd) or FakeResult(),
+            which=lambda name: "/usr/local/bin/bd",
+            workspace=workspace,
+        )
+        assert calls == []
+
+
+def test_beads_auto_init_tolerates_failure() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        workspace = Path(directory)
+        bootstrap.beads_auto_init(
+            {"OPENCODE_CONTAINER_BEADS": "1"},
+            run=lambda cmd, **kwargs: FakeResult(returncode=1),
+            which=lambda name: "/usr/local/bin/bd",
+            workspace=workspace,
+        )
+
+
+def test_herdr_skipped_without_flag_or_inside_pane() -> None:
+    assert not bootstrap.start_herdr([], {}, which=lambda name: "/usr/local/bin/herdr")
+    assert not bootstrap.start_herdr(
+        [], {"OPENCODE_CONTAINER_HERDR": "1", "HERDR_ENV": "1"}, which=lambda name: "/usr/local/bin/herdr"
+    )
+
+
+def test_herdr_skipped_without_binary() -> None:
+    assert not bootstrap.start_herdr(
+        [], {"OPENCODE_CONTAINER_HERDR": "1"}, which=lambda name: None
+    )
+
+
+def test_herdr_start_sequence_and_attach() -> None:
+    events: list[str] = []
+    created = FakeResult(stdout='{"result":{"root_pane":{"pane_id":"w1:p1"}}}')
+    statuses = iter(
+        [FakeResult(stdout="status: not running\n"), FakeResult(stdout="status: running\n")]
+    )
+
+    def run(cmd, **kwargs):
+        if cmd[:2] == ["herdr", "status"]:
+            events.append("status")
+            return next(statuses)
+        if cmd[:2] == ["herdr", "workspace"]:
+            events.append("workspace")
+            return created
+        events.append(f"start:{' '.join(cmd)}")
+        return FakeResult()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        environ = {"OPENCODE_CONTAINER_HERDR": "1", "TMPDIR": tmp}
+        started = bootstrap.start_herdr(
+            ["--model", "test"],
+            environ,
+            run=run,
+            popen=lambda cmd, **kwargs: events.append("server"),
+            sleep=lambda _seconds: None,
+            which=lambda name: "/usr/local/bin/herdr",
+            execvp=lambda program, command: events.append(f"exec:{program}"),
+            workspace=Path("/workspace"),
+            get_terminal_size=lambda: TERMINAL_SIZE,
+        )
+        assert started
+        assert events == [
+            "server",
+            "status",
+            "status",
+            "workspace",
+            "start:herdr agent start main --kind opencode --pane w1:p1 -- --model test",
+            "exec:herdr",
+        ]
+        # herdr state must live on the ephemeral dir, not the persisted volume
+        assert environ["XDG_CONFIG_HOME"] == str(Path(tmp) / "herdr-config")
+        assert (Path(tmp) / "herdr-config" / "herdr").is_dir()
+
+
+def test_herdr_config_survives_ephemeral_state() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        persisted = Path(tmp) / "persisted" / "herdr"
+        persisted.mkdir(parents=True)
+        (persisted / "config.toml").write_text("[ui]\ntheme = \"dark\"\n", encoding="utf-8")
+        environ = {
+            "OPENCODE_CONTAINER_HERDR": "1",
+            "TMPDIR": str(Path(tmp) / "tmp"),
+            "XDG_CONFIG_HOME": str(Path(tmp) / "persisted"),
+        }
+        (Path(tmp) / "tmp").mkdir()
+        bootstrap.start_herdr(
+            [],
+            environ,
+            run=lambda cmd, **kwargs: FakeResult(stdout="status: running\n"),
+            popen=lambda cmd, **kwargs: None,
+            sleep=lambda _seconds: None,
+            which=lambda name: "/usr/local/bin/herdr",
+            execvp=lambda program, command: None,
+            workspace=Path(tmp),
+            get_terminal_size=lambda: TERMINAL_SIZE,
+        )
+        copied = Path(tmp) / "tmp" / "herdr-config" / "herdr" / "config.toml"
+        assert copied.read_text(encoding="utf-8") == "[ui]\ntheme = \"dark\"\n"
+        # the persisted config file itself is left untouched
+        assert (persisted / "config.toml").is_file()
+
+
+def test_herdr_falls_back_on_failure() -> None:
+    import subprocess as _subprocess
+
+    def run(cmd, **kwargs):
+        if cmd[:2] == ["herdr", "status"]:
+            return FakeResult(stdout="status: running\n")
+        raise _subprocess.CalledProcessError(1, cmd)
+
+    assert not bootstrap.start_herdr(
+        [],
+        {"OPENCODE_CONTAINER_HERDR": "1"},
+        run=run,
+        popen=lambda cmd, **kwargs: None,
+        sleep=lambda _seconds: None,
+        which=lambda name: "/usr/local/bin/herdr",
+        workspace=Path("/tmp"),
+        get_terminal_size=lambda: TERMINAL_SIZE,
+    )
+
+
+def test_herdr_skipped_without_usable_terminal() -> None:
+    def failing_size():
+        raise OSError("not a tty")
+
+    assert not bootstrap.start_herdr(
+        [],
+        {"OPENCODE_CONTAINER_HERDR": "1"},
+        which=lambda name: "/usr/local/bin/herdr",
+        get_terminal_size=failing_size,
+    )
+    assert not bootstrap.start_herdr(
+        [],
+        {"OPENCODE_CONTAINER_HERDR": "1"},
+        which=lambda name: "/usr/local/bin/herdr",
+        get_terminal_size=lambda: os.terminal_size((0, 0)),
+    )
+
+
 def test_lifecycle_order_and_arguments() -> None:
     events: list[str] = []
     original_loader = bootstrap.load_secrets
@@ -109,5 +295,15 @@ if __name__ == "__main__":
     test_collisions_fail()
     test_unreadable_files_fail()
     test_invalid_utf8_fails()
+    test_beads_auto_init_skipped_without_flag()
+    test_beads_auto_init_runs_when_opted_in()
+    test_beads_auto_init_skipped_when_initialized()
+    test_beads_auto_init_tolerates_failure()
+    test_herdr_skipped_without_flag_or_inside_pane()
+    test_herdr_skipped_without_binary()
+    test_herdr_start_sequence_and_attach()
+    test_herdr_config_survives_ephemeral_state()
+    test_herdr_falls_back_on_failure()
+    test_herdr_skipped_without_usable_terminal()
     test_lifecycle_order_and_arguments()
     print("bootstrap checks passed")
