@@ -285,7 +285,56 @@ def test_lifecycle_order_and_arguments() -> None:
 
     assert events == [
         "secrets",
-        "exec:opencode:['opencode', '--model', 'test']",
+        "exec:opencode:['opencode', '--standalone', '--model', 'test']",
+    ]
+
+
+def test_standalone_injected_by_default() -> None:
+    assert bootstrap.standalone_args([]) == ["--standalone"]
+    assert bootstrap.standalone_args(["--model", "test"]) == ["--standalone", "--model", "test"]
+    assert bootstrap.standalone_args(["run", "hello"]) == ["--standalone", "run", "hello"]
+
+
+def test_standalone_respects_explicit_server_choice() -> None:
+    assert bootstrap.standalone_args(["--standalone"]) == ["--standalone"]
+    assert bootstrap.standalone_args(["--server", "http://box:4096"]) == [
+        "--server",
+        "http://box:4096",
+    ]
+
+
+def test_standalone_skipped_for_subcommands_without_the_flag() -> None:
+    assert bootstrap.standalone_args(["auth", "logout"]) == ["auth", "logout"]
+    assert bootstrap.standalone_args(["session", "list"]) == ["session", "list"]
+    assert bootstrap.standalone_args(["acp"]) == ["acp"]
+
+
+def test_standalone_reaches_herdr_pane_args() -> None:
+    events: list[str] = []
+    created = FakeResult(stdout='{"result":{"root_pane":{"pane_id":"w1:p1"}}}')
+
+    def run(cmd, **kwargs):
+        if cmd[:2] == ["herdr", "status"]:
+            return FakeResult(stdout="status: running\n")
+        if cmd[:2] == ["herdr", "workspace"]:
+            return created
+        events.append(" ".join(cmd))
+        return FakeResult()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        bootstrap.start_herdr(
+            bootstrap.standalone_args(["--model", "test"]),
+            {"OPENCODE_CONTAINER_HERDR": "1", "TMPDIR": tmp},
+            run=run,
+            popen=lambda cmd, **kwargs: None,
+            sleep=lambda _seconds: None,
+            which=lambda name: "/usr/local/bin/herdr",
+            execvp=lambda program, command: None,
+            workspace=Path("/workspace"),
+            get_terminal_size=lambda: TERMINAL_SIZE,
+        )
+    assert events == [
+        "herdr agent start main --kind opencode --pane w1:p1 -- --standalone --model test"
     ]
 
 
@@ -305,5 +354,9 @@ if __name__ == "__main__":
     test_herdr_config_survives_ephemeral_state()
     test_herdr_falls_back_on_failure()
     test_herdr_skipped_without_usable_terminal()
+    test_standalone_injected_by_default()
+    test_standalone_respects_explicit_server_choice()
+    test_standalone_skipped_for_subcommands_without_the_flag()
+    test_standalone_reaches_herdr_pane_args()
     test_lifecycle_order_and_arguments()
     print("bootstrap checks passed")

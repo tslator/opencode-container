@@ -72,6 +72,29 @@ def beads_auto_init(
         print(f"warning: bd init exited with status {result.returncode}", file=sys.stderr)
 
 
+# Subcommands that accept --standalone/--server (server-backed clients).
+# Others (auth, session, pair, acp, mcp, plugin, ...) reject the flag.
+STANDALONE_CAPABLE_COMMANDS = {"run", "mini", "stats", "api", "reload", "models"}
+
+
+def standalone_args(args: list[str]) -> list[str]:
+    """Default OpenCode to a private server instead of the shared background service.
+
+    All containers share the state volume, so concurrent instances would fight
+    over the single service.json registration: each server sees the other's
+    serviceID and shuts down ("managed service registration replaced"), and
+    herdr respawns the crashing CLI in a restart loop. A private server per
+    container avoids the shared registration entirely. Skipped when the user
+    already chose --standalone or --server, or when the subcommand rejects
+    the flag.
+    """
+    if "--standalone" in args or "--server" in args:
+        return args
+    if args and not args[0].startswith("-") and args[0] not in STANDALONE_CAPABLE_COMMANDS:
+        return args
+    return ["--standalone", *args]
+
+
 def start_herdr(
     args: list[str],
     environ: dict[str, str] | None = None,
@@ -162,6 +185,7 @@ def bootstrap(args: list[str], execvp=os.execvp, environ: dict[str, str] | None 
     environ = os.environ if environ is None else environ
     load_secrets()
     beads_auto_init(environ)
+    args = standalone_args(args)
     if start_herdr(args, environ, execvp=execvp):
         return
     execvp("opencode", ["opencode", *args])
