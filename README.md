@@ -189,11 +189,12 @@ When using the wrapper script (`bin/opencode-container`):
 | **Home Directory** | `~/.opencode-container/` | OpenCode cache, plugins, settings |
 | **Sessions** | `~/.opencode-container/projects/<name>-<hash>/share/` | Per-workspace session store (keyed by workspace path) |
 | **TUI state** | `~/.opencode-container/projects/<name>-<hash>/state/` | Per-workspace tabs, prompt history, model selection |
+| **Plan files** | `~/.opencode-container/projects/<name>-<hash>/plans/` | Per-workspace plan-mode documents (mounted at `/app/.claude/plans`) |
 | **Secrets** | `~/.opencode-container/secrets/` | API keys and credentials |
 | **Config** | `./config/` (this repo) | OpenCode configuration, MCP servers, global skill enablement |
 | **Workspace** | Current directory | Your project files |
 
-Because every workspace mounts at `/workspace` inside the container, OpenCode would otherwise merge all projects' sessions into one list and restore another workspace's session tabs (its TUI state keys tabs by cwd). The launcher therefore mounts a dedicated session store at `/app/.local/share` and TUI state at `/app/.local/state` per workspace path. Older versions kept a single shared store at `~/.opencode-container/.local/share/opencode/`; that history is no longer shown and can be deleted once you no longer need it.
+Because every workspace mounts at `/workspace` inside the container, OpenCode would otherwise merge all projects' sessions into one list and restore another workspace's session tabs (its TUI state keys tabs by cwd). The launcher therefore mounts a dedicated session store at `/app/.local/share`, TUI state at `/app/.local/state`, and plan-mode files at `/app/.claude/plans` (OpenCode's default plan directory) per workspace path. Older versions kept a single shared store at `~/.opencode-container/.local/share/opencode/`; that history is no longer shown and can be deleted once you no longer need it.
 
 ## Skills Library
 

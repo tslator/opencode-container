@@ -273,7 +273,11 @@ WORKSPACE="$(readlink -f "$WORKSPACE")"
 # (/app/.local/share) and TUI tab/prompt state in XDG_STATE_HOME
 # (/app/.local/state), and both key projects by cwd; since every host directory
 # mounts at /workspace, shared dirs would merge session lists and restore
-# another workspace's session tab on startup. Mount one pair per workspace path.
+# another workspace's session tab on startup. Mount one set per workspace path.
+# Plan-mode files default to $HOME/.claude/plans (opencode >=2.2 plansDirectory
+# default; configurable but relative to project root, so mounting the default
+# is the only way to keep plans out of the repo). Mount only that subdir so
+# the rest of ~/.claude and ~/.opencode stay shared.
 ws_hash="$(printf '%s' "$WORKSPACE" | sha1sum 2>/dev/null | cut -c1-12)"
 [ -n "$ws_hash" ] || ws_hash="$(printf '%s' "$WORKSPACE" | cksum | tr -d ' ')"
 ws_slug="$(basename "$WORKSPACE" | tr -c 'a-zA-Z0-9._\n-' '-')-$ws_hash"
@@ -286,7 +290,7 @@ if [ -d "$ws_root/opencode" ] && [ ! -d "$ws_root/share" ]; then
         mv "$entry" "$ws_root/share/"
     done
 fi
-mkdir -p "$ws_root/share" "$ws_root/state"
+mkdir -p "$ws_root/share" "$ws_root/state" "$ws_root/plans"
 
 reject_proxy_credentials() {
     case "$1" in
@@ -367,5 +371,6 @@ fi
     -v "$HOME/.opencode-container/secrets:/run/secrets:ro,Z" \
     -v "$ws_root/share:/app/.local/share:rw,Z" \
     -v "$ws_root/state:/app/.local/state:rw,Z" \
+    -v "$ws_root/plans:/app/.claude/plans:rw,Z" \
     -v "$WORKSPACE:/workspace:rw,Z" \
     opencode-container:latest "$@"

@@ -27,6 +27,7 @@ grep -F "$TEST_DIR/workspace:/workspace:rw,Z" "$TEST_DIR/args"
 # (sessions and TUI tabs isolated per workspace)
 grep -E '^[^ ]*/home/.opencode-container/projects/workspace-[0-9a-f]+/share:/app/.local/share:rw,Z$' "$TEST_DIR/args"
 grep -E '^[^ ]*/home/.opencode-container/projects/workspace-[0-9a-f]+/state:/app/.local/state:rw,Z$' "$TEST_DIR/args"
+grep -E '^[^ ]*/home/.opencode-container/projects/workspace-[0-9a-f]+/plans:/app/.claude/plans:rw,Z$' "$TEST_DIR/args"
 [ -d "$TEST_DIR/home/.opencode-container/projects" ]
 [ -n "$(find "$TEST_DIR/home/.opencode-container/projects" -type d -name state -print -quit)" ]
 
