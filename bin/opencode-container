@@ -11,6 +11,9 @@
 #   -u, --update-config Overwrite ~/.opencode-container/config/ files with repo versions
 #   --herdr             Start OpenCode inside a herdr pane (herdr multiplexer in image)
 #   --beads             Run `bd init` on first launch in workspaces without .beads/
+#   --bdui              Start the beads-ui web server in-container; publish a
+#                       per-workspace 127.0.0.1 port and print the URL
+#   --bdui-port N       Override the host port used by --bdui
 #   --memory            Set memory limit (default: 4g, e.g., --memory 8g)
 #   --cpus              Set CPU count (default: 4, e.g., --cpus 8)
 #   --host-access       Add the engine's host alias so the container can reach host services
@@ -43,6 +46,9 @@ Options:
   -u, --update-config  Overwrite ~/.opencode-container/config/ files with repo versions
       --herdr          Start OpenCode inside a herdr pane (herdr multiplexer in image)
       --beads          Run `bd init` on first launch in workspaces without .beads/
+      --bdui           Start the beads-ui web server in the container and publish
+                       a per-workspace 127.0.0.1 port (prints the URL)
+      --bdui-port N    Override the host port used by --bdui
       --memory SIZE    Set memory limit (default: 4g, e.g., --memory 8g)
       --cpus N         Set CPU count (default: 4, e.g., --cpus 8)
       --host-access    Add the engine's host alias so the container can reach host services
@@ -63,6 +69,8 @@ Environment:
   CPU_LIMIT                  default for --cpus
   OPENCODE_CONTAINER_HERDR   set to 1 to enable --herdr by default
   OPENCODE_CONTAINER_BEADS   set to 1 to enable --beads by default
+  OPENCODE_CONTAINER_BDUI    set to 1 to enable --bdui by default
+  OPENCODE_CONTAINER_BDUI_PORT  default host port for --bdui
 
 Any other flags/commands (e.g. -m/--model, -c/--continue, -s/--session,
 auth logout, run "msg") are passed through to the OpenCode CLI.
@@ -81,6 +89,9 @@ MEMORY_LIMIT="${MEMORY_LIMIT:-4g}"
 CPU_LIMIT="${CPU_LIMIT:-4}"
 HERDR_OPTIN="${OPENCODE_CONTAINER_HERDR:-0}"
 BEADS_OPTIN="${OPENCODE_CONTAINER_BEADS:-0}"
+BDUI_OPTIN="${OPENCODE_CONTAINER_BDUI:-0}"
+BDUI_PORT="${OPENCODE_CONTAINER_BDUI_PORT:-}"
+PORT_ARGS=()
 OPENCODE_HELP=0
 
 # Parse wrapper options first so -h/--help works without an engine or state dirs.
@@ -127,6 +138,15 @@ while [[ $# -gt 0 ]]; do
         --host-access)
             HOST_ACCESS=1
             shift
+            ;;
+        --bdui)
+            BDUI_OPTIN=1
+            shift
+            ;;
+        --bdui-port)
+            [ "$#" -ge 2 ] || { echo "error: --bdui-port requires a value" >&2; exit 2; }
+            BDUI_PORT="$2"
+            shift 2
             ;;
         *)
             break
@@ -299,6 +319,18 @@ EFF_NO_PROXY="${NO_PROXY:-${no_proxy:-}}"
 [ "$HERDR_OPTIN" = 1 ] && ENV_ARGS+=(--env "OPENCODE_CONTAINER_HERDR=1")
 [ "$BEADS_OPTIN" = 1 ] && ENV_ARGS+=(--env "OPENCODE_CONTAINER_BEADS=1")
 
+# bdui (beads-ui web server) runs inside the container (bootstrap starts it);
+# publish a per-workspace host port. Hash collisions between concurrent
+# workspaces are possible; --bdui-port overrides.
+if [ "$BDUI_OPTIN" = 1 ]; then
+    if [ -z "$BDUI_PORT" ]; then
+        BDUI_PORT=$((3000 + $(printf '%s' "$WORKSPACE" | cksum | cut -d' ' -f1) % 1000))
+    fi
+    ENV_ARGS+=(--env "OPENCODE_CONTAINER_BDUI=1")
+    PORT_ARGS+=(-p "127.0.0.1:${BDUI_PORT}:3000")
+    echo "bdui: http://127.0.0.1:${BDUI_PORT}/ (workspace: $WORKSPACE)" >&2
+fi
+
 # Dev override: binaries in ~/.opencode-container/bin take precedence over the
 # image-baked tools (bd, herdr) without rebuilding the image.
 if [ -d "$ocd_dir/bin" ]; then
@@ -328,6 +360,7 @@ fi
     --cpus="${CPU_LIMIT}" \
     "${ENV_ARGS[@]}" \
     "${HOST_ARGS[@]}" \
+    "${PORT_ARGS[@]}" \
     "${MOUNT_ARGS[@]}" \
     -v "$HOME/.opencode-container:/app:rw,Z" \
     -v "$HOME/.opencode-container/config:/app/.config/opencode:rw,Z" \

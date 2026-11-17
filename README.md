@@ -55,6 +55,8 @@ The `bin/opencode-container` script is the recommended way to run OpenCode Conta
 | `-u`, `--update-config` | off | Overwrite `~/.opencode-container/config/` with the repo's `config/` |
 | `--herdr` | off | Start OpenCode inside a [herdr](https://herdr.dev) pane (terminal multiplexer for agents) |
 | `--beads` | off | Run `bd init` automatically on first launch in a workspace without `.beads/` |
+| `--bdui` | off | Start the [beads-ui](https://github.com/mantoni/beads-ui) web server in the container and publish a per-workspace `127.0.0.1` port (prints the URL) |
+| `--bdui-port` | hashed | Override the host port used by `--bdui` |
 | `--memory` | `4g` | Container memory limit |
 | `--cpus` | `4` | Container CPU count |
 | `--host-access` | off | Add the engine's host alias (`host.docker.internal` for Docker, `host.containers.internal` for Podman) so the container can reach host services (see [Accessing Host Services](#accessing-host-services)) |
@@ -114,6 +116,16 @@ The image ships pinned release binaries for [beads](https://github.com/gastownha
 To iterate on either binary without rebuilding the image, drop a replacement in `~/.opencode-container/bin/` (e.g. `~/.opencode-container/bin/herdr`); it is mounted read-only at `/opt/host-tools` and takes PATH precedence.
 
 After bumping `HERDR_VERSION` in the Dockerfile, regenerate the bundled skill: `make herdr-skill`.
+
+### Bundled web UI: bdui (beads-ui)
+
+The image ships the pinned [beads-ui](https://github.com/mantoni/beads-ui) npm package (`bdui`, a web UI for `bd`). It is opt-in per launch:
+
+- **`--bdui`** (or `OPENCODE_CONTAINER_BDUI=1`): bootstrap starts `bdui start --host 0.0.0.0` inside the container (which auto-registers the workspace's `.beads/` database), and the launcher publishes it on a host port bound to `127.0.0.1` only, then prints the exact URL, e.g. `bdui: http://127.0.0.1:3289/`. Open it in your host browser. If `bdui` fails to start, OpenCode still launches normally with only a warning.
+
+**Multi-project:** each container has its own network namespace and runtime dir, so N project folders = N containers, each running its own bdui. The default host port is derived from the workspace path (`3000 + cksum(path) % 1000`), so a given project always gets the same URL and concurrent projects almost never collide — but the hash can collide (birthday-paradox odds rise around ~40 concurrent projects in the 1000-port space). On collision the container fails to start the port mapping; fix with `--bdui-port N` (or `OPENCODE_CONTAINER_BDUI_PORT`) to pick a free port.
+
+**Single-host alternative:** bdui natively supports multiple workspaces (REST `POST /api/register-workspace`, in-UI workspace picker). If you prefer one bookmarked URL for all projects, run `npm i -g beads-ui && bdui start` on the host and register each project folder — e.g. `curl -X POST http://127.0.0.1:3000/api/register-workspace -H 'content-type: application/json' -d '{"path":"/path/to/project","database":"/path/to/project/.beads"}'` — the host `bd` reads each repo's beads DB directly, so no container or port juggling is needed. Use `--bdui` per container instead when the beads DB must stay container-private.
 
 ### Bundled terminal tools: lazygit and ttt
 

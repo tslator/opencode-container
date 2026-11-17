@@ -181,10 +181,46 @@ def start_herdr(
     return True
 
 
+def start_bdui(
+    environ: dict[str, str] | None = None,
+    run=subprocess.run,
+    which=shutil.which,
+    workspace: Path = WORKSPACE_DIR,
+) -> None:
+    """Start the beads-ui web server when opted in via OPENCODE_CONTAINER_BDUI=1.
+
+    bdui daemonizes and keeps its pid/log in the container's ephemeral /tmp
+    (XDG_RUNTIME_DIR is unset here), so each container run gets a fresh server
+    and the launcher only has to publish the port. Failures warn but never
+    block OpenCode.
+    """
+    environ = os.environ if environ is None else environ
+    if environ.get("OPENCODE_CONTAINER_BDUI") != "1":
+        return
+    if which("bdui") is None:
+        print("warning: OPENCODE_CONTAINER_BDUI=1 but bdui is not on PATH", file=sys.stderr)
+        return
+    cwd = str(workspace) if workspace.is_dir() else str(Path.home())
+    result = run(
+        ["bdui", "start", "--host", "0.0.0.0"],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if getattr(result, "returncode", 0) != 0:
+        detail = (getattr(result, "stderr", "") or getattr(result, "stdout", "") or "").strip()
+        print(f"warning: bdui start failed (status {result.returncode}): {detail[:200]}",
+              file=sys.stderr)
+    else:
+        print("bdui: beads-ui server listening on 0.0.0.0:3000")
+
+
 def bootstrap(args: list[str], execvp=os.execvp, environ: dict[str, str] | None = None) -> None:
     environ = os.environ if environ is None else environ
     load_secrets()
     beads_auto_init(environ)
+    start_bdui(environ)
     args = standalone_args(args)
     if start_herdr(args, environ, execvp=execvp):
         return

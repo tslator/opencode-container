@@ -6,6 +6,7 @@ ARG USER_UID=1000
 ARG USER_GID=1000
 ARG NODE_MAJOR=24
 ARG OPENCODE_VERSION=2.2.6
+ARG BDUI_VERSION=0.12.6
 
 # BuildKit supplies proxy build arguments from the builder environment. They are
 # exported only for the commands that need them and are not stored as ENV.
@@ -86,6 +87,10 @@ RUN export http_proxy="${http_proxy:-${HTTP_PROXY:-}}" https_proxy="${https_prox
     bash /tmp/install-opencode.sh --version "${OPENCODE_VERSION}" --no-modify-path && \
     rm -f /tmp/install-opencode.sh && \
     install -m 0755 /root/.opencode/bin/opencode /usr/local/bin/opencode
+
+RUN export http_proxy="${http_proxy:-${HTTP_PROXY:-}}" https_proxy="${https_proxy:-${HTTPS_PROXY:-}}" no_proxy="${no_proxy:-${NO_PROXY:-}}"; \
+    npm install --global --no-audit --no-fund "beads-ui@${BDUI_VERSION}" && \
+    bdui --version
 
 RUN node --version && \
     npm --version && \
@@ -178,7 +183,7 @@ ARG USER_GID=1000
 RUN mkdir -p /opt/runtime-rootfs && \
     /usr/local/bin/collect-runtime-deps.sh /opt/runtime-rootfs \
       opencode node npm python3 git \
-      bd beads herdr lazygit ttt \
+      bd beads herdr lazygit ttt bdui \
       /usr/lib/git-core/git-remote-http /usr/lib/git-core/git-remote-https \
       mkdir find grep rg jq cat head tail sed awk \
       ls cp mv rm chmod wc sort cut env date dirname basename sh

@@ -106,4 +106,35 @@ grep -F -- "$TEST_DIR/workspace:/workspace:rw,Z" "$TEST_DIR/args_skills_p"
 grep -Fx -- '/workspace' "$TEST_DIR/args_skills_p" >/dev/null
 grep -Fx -- '--config' "$TEST_DIR/args_skills_p" && exit 1
 
+# --bdui publishes a deterministic per-workspace 127.0.0.1 port and opts in
+ARGS_FILE="$TEST_DIR/args_bdui" \
+HOME="$TEST_DIR/home" \
+PATH="$TEST_DIR/bin:$PATH" \
+OPENCODE_CONTAINER_REPO="$TEST_DIR/repo" \
+OPENCODE_WORKSPACE="$TEST_DIR/workspace" \
+  "$ROOT_DIR/bin/opencode-container" --bdui
+expected_port=$((3000 + $(printf '%s' "$(readlink -f "$TEST_DIR/workspace")" | cksum | cut -d' ' -f1) % 1000))
+grep -Fx -- "127.0.0.1:${expected_port}:3000" "$TEST_DIR/args_bdui"
+grep -Fx -- '-p' "$TEST_DIR/args_bdui" >/dev/null
+grep -Fx -- 'OPENCODE_CONTAINER_BDUI=1' "$TEST_DIR/args_bdui"
+
+# --bdui-port overrides the hashed port
+ARGS_FILE="$TEST_DIR/args_bdui2" \
+HOME="$TEST_DIR/home" \
+PATH="$TEST_DIR/bin:$PATH" \
+OPENCODE_CONTAINER_REPO="$TEST_DIR/repo" \
+OPENCODE_WORKSPACE="$TEST_DIR/workspace" \
+  "$ROOT_DIR/bin/opencode-container" --bdui --bdui-port 4599
+grep -Fx -- "127.0.0.1:4599:3000" "$TEST_DIR/args_bdui2"
+
+# no --bdui: no port publishing, no bdui env
+ARGS_FILE="$TEST_DIR/args_nobdui" \
+HOME="$TEST_DIR/home" \
+PATH="$TEST_DIR/bin:$PATH" \
+OPENCODE_CONTAINER_REPO="$TEST_DIR/repo" \
+OPENCODE_WORKSPACE="$TEST_DIR/workspace" \
+  "$ROOT_DIR/bin/opencode-container"
+grep -F -- '3000' "$TEST_DIR/args_nobdui" && exit 1
+grep -Fx -- 'OPENCODE_CONTAINER_BDUI=1' "$TEST_DIR/args_nobdui" && exit 1
+
 echo "launcher mount and environment checks passed"
