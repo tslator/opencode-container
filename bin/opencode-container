@@ -317,6 +317,17 @@ if [ "$BDUI_OPTIN" != 1 ] && [ -d "$WORKSPACE/.beads" ] && command -v curl >/dev
     fi
 fi
 
+# Prune stale host bdui registrations (project deleted or beads removed) so
+# the re-registration list — and the dropdown after a service restart — stays
+# clean. Runs on every launch, independent of whether the service answers.
+if [ -f "$ocd_dir/bdui-workspaces.txt" ]; then
+    bdui_tmp="$(mktemp "$ocd_dir/bdui-workspaces.txt.XXXXXX")"
+    while IFS= read -r ws; do
+        [ -n "$ws" ] && [ -d "$ws/.beads" ] && printf '%s\n' "$ws" >> "$bdui_tmp"
+    done < "$ocd_dir/bdui-workspaces.txt"
+    mv "$bdui_tmp" "$ocd_dir/bdui-workspaces.txt"
+fi
+
 reject_proxy_credentials() {
     case "$1" in
         *://*@*)

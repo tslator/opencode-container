@@ -208,4 +208,16 @@ OPENCODE_CONTAINER_BDUI_HOST_URL="http://127.0.0.1:1" \
   "$ROOT_DIR/bin/opencode-container"
 grep -Fxq "$(readlink -f "$TEST_DIR/workspace")" "$TEST_DIR/home/.opencode-container/bdui-workspaces.txt"
 
+# stale list entries are pruned on launch (deleted project or beads removed)
+printf '%s\n%s\n' "$TEST_DIR/gone" "$(readlink -f "$TEST_DIR/workspace")" \
+  > "$TEST_DIR/home/.opencode-container/bdui-workspaces.txt"
+ARGS_FILE="$TEST_DIR/args_prune" \
+HOME="$TEST_DIR/home" \
+PATH="$TEST_DIR/bin:$PATH" \
+OPENCODE_CONTAINER_REPO="$TEST_DIR/repo" \
+OPENCODE_WORKSPACE="$TEST_DIR/workspace" \
+  "$ROOT_DIR/bin/opencode-container"
+grep -Fxq "$(readlink -f "$TEST_DIR/workspace")" "$TEST_DIR/home/.opencode-container/bdui-workspaces.txt"
+grep -F "gone" "$TEST_DIR/home/.opencode-container/bdui-workspaces.txt" && exit 1
+
 echo "launcher mount and environment checks passed"
