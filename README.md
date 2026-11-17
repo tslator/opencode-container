@@ -137,8 +137,17 @@ For a permanent single-host UI, the repo ships a systemd **user** service that r
 Install (the launcher seeds `~/.opencode-container/bdui-serve.sh` from the repo automatically on every run):
 
 ```bash
+opencode-container bdui-service install    # or the manual steps below
+opencode-container bdui-service status     # active state + registered workspaces
+opencode-container bdui-service uninstall  # disable + remove the unit
+```
+
+Manual fallback (e.g. if you don't run the launcher from the repo):
+
+```bash
 mkdir -p ~/.config/systemd/user
 cp systemd/bdui.service ~/.config/systemd/user/bdui.service
+cp systemd/bdui-serve.sh ~/.opencode-container/bdui-serve.sh
 systemctl --user daemon-reload
 systemctl --user enable --now bdui
 ```

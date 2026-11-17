@@ -6,7 +6,7 @@ TEST_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEST_DIR"' EXIT
 
 mkdir -p "$TEST_DIR/bin" "$TEST_DIR/home" "$TEST_DIR/workspace" "$TEST_DIR/repo/config" "$TEST_DIR/repo/systemd"
-cp "$ROOT_DIR/systemd/bdui-serve.sh" "$TEST_DIR/repo/systemd/"
+cp "$ROOT_DIR/systemd/bdui-serve.sh" "$ROOT_DIR/systemd/bdui.service" "$TEST_DIR/repo/systemd/"
 cat > "$TEST_DIR/bin/podman" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$@" > "$ARGS_FILE"
@@ -219,5 +219,41 @@ OPENCODE_WORKSPACE="$TEST_DIR/workspace" \
   "$ROOT_DIR/bin/opencode-container"
 grep -Fxq "$(readlink -f "$TEST_DIR/workspace")" "$TEST_DIR/home/.opencode-container/bdui-workspaces.txt"
 grep -F "gone" "$TEST_DIR/home/.opencode-container/bdui-workspaces.txt" && exit 1
+
+# --- bdui-service subcommand --------------------------------------------------
+cat > "$TEST_DIR/bin/systemctl" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$SYSTEMCTL_LOG"
+EOF
+chmod +x "$TEST_DIR/bin/systemctl"
+
+SYSTEMCTL_LOG="$TEST_DIR/systemctl" \
+HOME="$TEST_DIR/home" \
+PATH="$TEST_DIR/bin:$PATH" \
+OPENCODE_CONTAINER_REPO="$TEST_DIR/repo" \
+  "$ROOT_DIR/bin/opencode-container" bdui-service install
+grep -F "daemon-reload" "$TEST_DIR/systemctl"
+grep -F "enable --now bdui" "$TEST_DIR/systemctl"
+grep -Fq "Description=beads-ui" "$TEST_DIR/home/.config/systemd/user/bdui.service"
+
+SYSTEMCTL_LOG="$TEST_DIR/systemctl" \
+HOME="$TEST_DIR/home" \
+PATH="$TEST_DIR/bin:$PATH" \
+OPENCODE_CONTAINER_REPO="$TEST_DIR/repo" \
+  "$ROOT_DIR/bin/opencode-container" bdui-service status
+grep -F "is-active bdui" "$TEST_DIR/systemctl"
+
+SYSTEMCTL_LOG="$TEST_DIR/systemctl" \
+HOME="$TEST_DIR/home" \
+PATH="$TEST_DIR/bin:$PATH" \
+OPENCODE_CONTAINER_REPO="$TEST_DIR/repo" \
+  "$ROOT_DIR/bin/opencode-container" bdui-service uninstall
+grep -F "disable --now bdui" "$TEST_DIR/systemctl"
+[ ! -f "$TEST_DIR/home/.config/systemd/user/bdui.service" ]
+
+HOME="$TEST_DIR/home" \
+PATH="$TEST_DIR/bin:$PATH" \
+OPENCODE_CONTAINER_REPO="$TEST_DIR/repo" \
+  "$ROOT_DIR/bin/opencode-container" bdui-service bogus && exit 1
 
 echo "launcher mount and environment checks passed"

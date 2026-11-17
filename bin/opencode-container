@@ -208,6 +208,49 @@ if [ -f "$repo_dir/systemd/bdui-serve.sh" ] \
     chmod +x "$ocd_dir/bdui-serve.sh"
 fi
 
+# bdui-service subcommand: manage the host-level beads-ui systemd user
+# service (see systemd/bdui.service and README "Host bdui service").
+if [ "${1:-}" = "bdui-service" ]; then
+    shift
+    action="${1:-status}"
+    unit_src="$repo_dir/systemd/bdui.service"
+    unit_dst="$HOME/.config/systemd/user/bdui.service"
+    bdui_url="${OPENCODE_CONTAINER_BDUI_HOST_URL:-http://127.0.0.1:3000}"
+    command -v systemctl >/dev/null 2>&1 \
+        || { echo "error: systemctl not found; install the unit manually (see README)" >&2; exit 1; }
+    case "$action" in
+        install)
+            [ -f "$unit_src" ] || { echo "error: $unit_src not found" >&2; exit 1; }
+            [ -f "$ocd_dir/bdui-serve.sh" ] || { echo "error: $ocd_dir/bdui-serve.sh not found (run from the repo)" >&2; exit 1; }
+            mkdir -p "$HOME/.config/systemd/user"
+            cp "$unit_src" "$unit_dst"
+            systemctl --user daemon-reload
+            systemctl --user enable --now bdui
+            echo "bdui service installed: $bdui_url"
+            ;;
+        uninstall)
+            systemctl --user disable --now bdui 2>/dev/null || true
+            rm -f "$unit_dst"
+            systemctl --user daemon-reload
+            echo "bdui service removed (workspace list kept: $ocd_dir/bdui-workspaces.txt)"
+            ;;
+        status)
+            systemctl --user is-active bdui 2>/dev/null || true
+            if command -v curl >/dev/null 2>&1 \
+                    && bdui_ws="$(curl -sf -m 2 "$bdui_url/api/workspaces" 2>/dev/null)"; then
+                echo "registered workspaces: $(printf '%s' "$bdui_ws" | grep -o '"path"' | wc -l)"
+            else
+                echo "no bdui server answering at $bdui_url"
+            fi
+            ;;
+        *)
+            echo "usage: opencode-container bdui-service [install|uninstall|status]" >&2
+            exit 2
+            ;;
+    esac
+    exit 0
+fi
+
 # skills subcommand: one-shot installer runs against the image-baked
 # my-skills checkout (no network, no --host-access). Host paths are
 # translated to their in-container locations: --global maps to the global
