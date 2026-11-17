@@ -49,3 +49,6 @@ secrets/
 .beads-credential-key
 .beads/proxieddb/
 *.gate.lock*
+
+# Vendored skills checkout (content pinned by vendor/my-skills.sha)
+vendor/my-skills/

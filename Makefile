@@ -1,4 +1,4 @@
-.PHONY: build build-latest shell clean tag-latest build-builder-tools prune-cache herdr-skill
+.PHONY: build build-latest shell clean tag-latest build-builder-tools prune-cache herdr-skill skills skills-bump
 
 ENGINE ?= $(shell command -v podman >/dev/null 2>&1 && echo podman || echo docker)
 USER_UID := $(shell id -u)
@@ -22,7 +22,28 @@ ifneq ($(findstring @,$(HTTPS_PROXY_EFF)),)
 $(error HTTPS_PROXY must not contain embedded credentials)
 endif
 
-build:
+# Vendored skills library (private repo; requires `gh auth`). The checkout is
+# pinned by vendor/my-skills.sha and copied into the image at /opt/my-skills.
+# `make skills-bump` re-pins to upstream HEAD; `make skills` refreshes the
+# checkout; build depends on it so the COPY source always exists.
+MY_SKILLS_REPO ?= tslator/my-skills
+MY_SKILLS_SHA := $(shell cat vendor/my-skills.sha 2>/dev/null)
+
+vendor/my-skills: vendor/my-skills.sha
+	@[ -n "$(MY_SKILLS_SHA)" ] || { echo "error: vendor/my-skills.sha is empty"; exit 1; }
+	@command -v gh >/dev/null || { echo "error: gh CLI required to clone $(MY_SKILLS_REPO)"; exit 1; }
+	@rm -rf vendor/my-skills && mkdir -p vendor
+	@gh repo clone $(MY_SKILLS_REPO) vendor/my-skills -- --quiet
+	@cd vendor/my-skills && git checkout --quiet $(MY_SKILLS_SHA) && rm -rf .git .[!.]*
+	@echo "vendored $(MY_SKILLS_REPO)@$(MY_SKILLS_SHA)"
+
+skills: vendor/my-skills
+
+skills-bump:
+	@sha=$$(gh api repos/$(MY_SKILLS_REPO)/commits/HEAD --jq .sha) && \
+	echo "$$sha" > vendor/my-skills.sha && echo "pinned $(MY_SKILLS_REPO)@$${sha}"
+
+build: vendor/my-skills
 	$(ENGINE) build --build-arg USER_UID=$(USER_UID) --build-arg USER_GID=$(USER_GID) $(if $(VERSION),--build-arg OPENCODE_VERSION=$(VERSION),) -t opencode-container$(if $(VERSION),:$(VERSION),) .
 
 build-builder-tools:

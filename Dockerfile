@@ -204,6 +204,8 @@ RUN cd /opt/runtime-rootfs && \
     [ -L usr/bin/sh ] && [ -x ".$(readlink usr/bin/sh)" ]
 
 RUN mkdir -p /opt/runtime-rootfs/app/.local/share /opt/runtime-rootfs/app/.local/state /opt/runtime-rootfs/app/.config/opencode /opt/runtime-rootfs/app/.cache && \
+    mkdir -p /opt/runtime-rootfs/opt && \
+    ln -s /opt/my-skills /opt/runtime-rootfs/opt/skills && \
     chown -R ${USER_UID}:${USER_GID} /opt/runtime-rootfs/app && \
     printf 'opencode:x:%s:%s:OpenCode User:/app:/usr/bin/python3\n' "${USER_UID}" "${USER_GID}" >> /opt/runtime-rootfs/etc/passwd && \
     printf 'opencode:x:%s:\n' "${USER_GID}" >> /opt/runtime-rootfs/etc/group
@@ -225,6 +227,12 @@ ENV NPM_CONFIG_CAFILE=/etc/ssl/certs/ca-certificates.crt
 
 COPY --from=collector /opt/runtime-rootfs/ /
 COPY --chmod=0755 bootstrap.py /usr/local/bin/bootstrap.py
+
+# Skills library vendored from tslator/my-skills (see `make skills`); root-owned
+# so the agent cannot edit its own skill sources. The /opt/skills symlink ships
+# via the collector rootfs (distroless has no ln) as a stable indirection so
+# config paths survive repo-layout changes.
+COPY vendor/my-skills /opt/my-skills
 
 USER ${USER_UID}:${USER_GID}
 

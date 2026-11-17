@@ -1,6 +1,6 @@
 # Plan: Skills in the container image
 
-**Status:** design approved; validation gates passed (etw); implementation pending
+**Status:** implementing — validation gates (etw) and image bake (cva.1) done
 **Date:** 2026-11-17
 
 ## Goal
