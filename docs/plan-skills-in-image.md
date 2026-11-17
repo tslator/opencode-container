@@ -1,6 +1,6 @@
 # Plan: Skills in the container image
 
-**Status:** implementing — etw, cva.1, 89t, cva.4 done; remaining: cva.2, cva.3, cva.5, cva.6
+**Status:** implementing — etw, cva.1, 89t, cva.4, cva.2 done; remaining: cva.3, cva.5, cva.6
 **Date:** 2026-11-17
 
 ## Goal
@@ -55,8 +55,9 @@ decide activation.
   changes.
 - Skill content updates = bump SHA + rebuild. Enablement changes = config
   edits only, no rebuild.
-- Default `config/opencode.json` ships with **no** `skills` key: content
-  present, nothing enabled (first-run state).
+- Default `config/opencode.json` ships with a single `skills` entry: the
+  `meta-skill-library-admin` skill, so the interview flow can bootstrap all
+  other enablement (everything else starts disabled).
 
 ### 2. Launcher (`bin/opencode-container`)
 
