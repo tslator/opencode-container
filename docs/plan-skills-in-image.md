@@ -1,6 +1,6 @@
 # Plan: Skills in the container image
 
-**Status:** implementing — etw, cva.1, 89t, cva.4, cva.2, cva.5 done; remaining: cva.3, cva.6
+**Status:** implementing — etw, cva.1, 89t, cva.4, cva.2, cva.5, cva.6 done; remaining: cva.3 (P3)
 **Date:** 2026-11-17
 
 ## Goal
