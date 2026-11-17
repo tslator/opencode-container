@@ -106,4 +106,55 @@ USERNS=()
     -v "$TEST_DIR/driver.py:/driver.py:ro,Z" \
     "$IMAGE" /driver.py meta-skill-library-admin python-debugging
 
+# --- Gate enforcement: skill.use deny removes the skill (opencode >=2.2.3) --
+mkdir -p "$TEST_DIR/gate/.config/opencode" "$TEST_DIR/gate/proj"
+cat > "$TEST_DIR/gate/.config/opencode/opencode.json" <<'EOF'
+{
+  "skills": ["/opt/my-skills/python-skills"],
+  "policies": [
+    { "action": "skill.use", "resource": "python-new-project", "effect": "deny" }
+  ]
+}
+EOF
+cat > "$TEST_DIR/gate-driver.py" <<'PYEOF'
+import base64, json, os, socket, subprocess, sys, time, urllib.request
+
+s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()
+proc = subprocess.Popen(["opencode", "serve", "--hostname", "127.0.0.1", "--port", str(port)],
+                        cwd="/workspace", stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT, text=True)
+os.set_blocking(proc.stdout.fileno(), False)
+buf, pw, deadline = "", None, time.time() + 90
+while time.time() < deadline:
+    buf += proc.stdout.read(4096) or ""
+    if "password " in buf:
+        pw = buf.split("password ")[1].split("\n")[0].strip(); break
+    if proc.poll() is not None:
+        print("serve died:\n" + buf); sys.exit(1)
+    time.sleep(0.2)
+if not pw:
+    proc.terminate(); print("no password"); sys.exit(1)
+headers = {"Authorization": "Basic " + base64.b64encode(("opencode:" + pw).encode()).decode()}
+try:
+    ids, deadline = set(), time.time() + 60
+    while time.time() < deadline:
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/api/skill", headers=headers)
+        ids = {d["id"] for d in json.loads(urllib.request.urlopen(req, timeout=60).read())["data"]}
+        if "python-debugging" in ids:
+            break
+        time.sleep(1)
+    ok = "python-debugging" in ids and "python-new-project" not in ids
+    print(("PASS" if ok else "FAIL") + ": skill.use deny enforced "
+          f"(python-debugging={'present' if 'python-debugging' in ids else 'MISSING'}, "
+          f"python-new-project={'LEAKED' if 'python-new-project' in ids else 'denied'})")
+    sys.exit(0 if ok else 1)
+finally:
+    proc.terminate(); proc.wait(timeout=10)
+PYEOF
+"$ENGINE" run --rm -i "${USERNS[@]}" --workdir /workspace --entrypoint /usr/bin/python3 \
+    -v "$TEST_DIR/gate/.config:/app/.config:rw,Z" \
+    -v "$TEST_DIR/gate/proj:/workspace:rw,Z" \
+    -v "$TEST_DIR/gate-driver.py:/driver.py:ro,Z" \
+    "$IMAGE" /driver.py
+
 echo "skills e2e smoke passed"

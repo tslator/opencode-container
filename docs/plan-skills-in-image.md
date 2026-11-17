@@ -1,6 +1,6 @@
 # Plan: Skills in the container image
 
-**Status:** implementing — etw, cva.1, 89t, cva.4, cva.2, cva.5, cva.6, cva.3 done; epic complete (follow-up: bump opencode ≥2.2.3 for skill.use enforcement)
+**Status:** done — etw, cva.1–6, 89t, 37m all complete (image on opencode 2.2.6, skill.use enforcement verified)
 **Date:** 2026-11-17
 
 ## Goal
@@ -130,9 +130,9 @@ top-level `policies` array (OpenCode ≥2.2.3 hard-deny form) for taxonomy
 entries whose Status is not `ready`; 16-check synthetic driver covers
 creation, JSONC-preserving edits, idempotency, foreign-statement safety,
 and ready-pruning; in-image run verified with a simulated draft. All real
-taxonomy entries are `ready`, so gating writes are no-ops today. **Caveat:**
-the image pins opencode 2.0.9, which ignores `skill.use` (needs ≥2.2.3);
-enforcement activates when the image bumps (follow-up bead).
+taxonomy entries are `ready`, so gating writes are no-ops today. **Caveat resolved:** image bumped
+to opencode 2.2.6 (bead 37m, matches host); the e2e script now includes a
+live gate-enforcement check (denied slug absent from `/api/skill`).
 
 ## Rejected alternatives
 

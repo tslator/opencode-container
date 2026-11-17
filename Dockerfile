@@ -5,7 +5,7 @@ FROM debian:13-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c70
 ARG USER_UID=1000
 ARG USER_GID=1000
 ARG NODE_MAJOR=24
-ARG OPENCODE_VERSION=2.0.9
+ARG OPENCODE_VERSION=2.2.6
 
 # BuildKit supplies proxy build arguments from the builder environment. They are
 # exported only for the commands that need them and are not stored as ENV.
