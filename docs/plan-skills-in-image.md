@@ -1,6 +1,6 @@
 # Plan: Skills in the container image
 
-**Status:** implementing — etw, cva.1, 89t, cva.4, cva.2, cva.5, cva.6 done; remaining: cva.3 (P3)
+**Status:** implementing — etw, cva.1, 89t, cva.4, cva.2, cva.5, cva.6, cva.3 done; epic complete (follow-up: bump opencode ≥2.2.3 for skill.use enforcement)
 **Date:** 2026-11-17
 
 ## Goal
@@ -122,6 +122,17 @@ distinct probe skills per layer):
 3. **Unknown paths — tolerated.** A nonexistent path in `skills` neither
    crashes the server nor hides other skills; typo/drift in config degrades
    gracefully.
+
+## Enable-implies-gate — VERIFIED (bead cva.3, 2026-11-17)
+
+`enable`/`disable`/`gate` maintain `skill.use` deny statements in the
+top-level `policies` array (OpenCode ≥2.2.3 hard-deny form) for taxonomy
+entries whose Status is not `ready`; 16-check synthetic driver covers
+creation, JSONC-preserving edits, idempotency, foreign-statement safety,
+and ready-pruning; in-image run verified with a simulated draft. All real
+taxonomy entries are `ready`, so gating writes are no-ops today. **Caveat:**
+the image pins opencode 2.0.9, which ignores `skill.use` (needs ≥2.2.3);
+enforcement activates when the image bumps (follow-up bead).
 
 ## Rejected alternatives
 
