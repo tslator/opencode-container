@@ -1,6 +1,6 @@
 # Plan: Skills in the container image
 
-**Status:** implementing — validation gates (etw), image bake (cva.1), and installer `--config` (89t) done
+**Status:** implementing — etw, cva.1, 89t, cva.4 done; remaining: cva.2, cva.3, cva.5, cva.6
 **Date:** 2026-11-17
 
 ## Goal

@@ -82,4 +82,28 @@ OPENCODE_WORKSPACE="$TEST_DIR/workspace" \
 grep -F -- '/workspace:rw,Z' "$TEST_DIR/args4" && exit 1
 grep -F -- '--workdir' "$TEST_DIR/args4" && exit 1
 
+# skills subcommand: global mode maps --global to the mounted global config
+ARGS_FILE="$TEST_DIR/args_skills_g" \
+HOME="$TEST_DIR/home" \
+PATH="$TEST_DIR/bin:$PATH" \
+OPENCODE_CONTAINER_REPO="$TEST_DIR/repo" \
+  "$ROOT_DIR/bin/opencode-container" skills enable --global
+grep -Fx -- '--config' "$TEST_DIR/args_skills_g" >/dev/null
+grep -Fx -- '/app/.config/opencode/opencode.json' "$TEST_DIR/args_skills_g" >/dev/null
+grep -Fx -- '/opt/my-skills/scripts/install_skills.py' "$TEST_DIR/args_skills_g"
+grep -F -- '/home/.opencode-container/config:/app/.config/opencode:rw,Z' "$TEST_DIR/args_skills_g"
+grep -F -- '/workspace:rw,Z' "$TEST_DIR/args_skills_g" && exit 1
+grep -Fx -- '--workdir' "$TEST_DIR/args_skills_g" >/dev/null
+grep -Fx -- '/app' "$TEST_DIR/args_skills_g" >/dev/null
+
+# skills subcommand: --project DIR mounts DIR at /workspace and rewrites the arg
+ARGS_FILE="$TEST_DIR/args_skills_p" \
+HOME="$TEST_DIR/home" \
+PATH="$TEST_DIR/bin:$PATH" \
+OPENCODE_CONTAINER_REPO="$TEST_DIR/repo" \
+  "$ROOT_DIR/bin/opencode-container" skills enable --project "$TEST_DIR/workspace"
+grep -F -- "$TEST_DIR/workspace:/workspace:rw,Z" "$TEST_DIR/args_skills_p"
+grep -Fx -- '/workspace' "$TEST_DIR/args_skills_p" >/dev/null
+grep -Fx -- '--config' "$TEST_DIR/args_skills_p" && exit 1
+
 echo "launcher mount and environment checks passed"

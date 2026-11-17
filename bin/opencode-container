@@ -17,6 +17,13 @@
 #   --opencode-help     Show OpenCode's own CLI options (runs the container with --help)
 #   -h, --help          Show this help
 #
+# Subcommands:
+#   skills <installer args...>
+#                       Manage the baked my-skills library via the in-image
+#                       installer (list|status|enable|disable|gate|...).
+#                       --global edits ~/.opencode-container/config/opencode.json;
+#                       --project DIR (default: cwd) edits that project's config.
+#
 # Any other flags/commands (e.g. -m/--model, -c/--continue, -s/--session,
 # auth logout, run "msg") are passed through to the OpenCode CLI.
 
@@ -27,6 +34,7 @@ usage() {
 opencode-container — run OpenCode in a container
 
 Usage: opencode-container [options] [opencode args...]
+       opencode-container skills <installer args...>
 
 Options:
   -w, --websearch      Enable web search (sets OPENCODE_ENABLE_EXA=1)
@@ -40,6 +48,13 @@ Options:
       --host-access    Add the engine's host alias so the container can reach host services
       --opencode-help  Show OpenCode's own CLI options (runs the container with --help)
   -h, --help           Show this help
+
+Subcommands:
+  skills <installer args...>
+      Manage the baked my-skills library with the in-image installer
+      (list|status|enable|disable|gate|...). --global edits the global
+      config (~/.opencode-container/config/opencode.json); --project DIR
+      (default: cwd) edits that project's opencode.json. Runs offline.
 
 Environment:
   CONTAINER_ENGINE           podman or docker (auto-detected if unset)
@@ -138,6 +153,12 @@ if [ "$HOST_ACCESS" = 1 ]; then
     esac
 fi
 
+USERNS_ARGS=()
+if [ "$ENGINE" = podman ]; then
+    # ponytail: keep-id is rootless-only; rootful podman (sudo) will reject it
+    USERNS_ARGS=(--userns=keep-id)
+fi
+
 # --opencode-help: show the OpenCode CLI help from the image itself; skip
 # state-dir setup, config copy, proxy forwarding, and secrets since help
 # needs none of them. No --workdir: podman rejects a workdir missing from
@@ -158,6 +179,63 @@ repo_dir="${OPENCODE_CONTAINER_REPO:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 # cannot create /app/.config/herdr later.
 mkdir -p "$ocd_dir/.config" "$ocd_dir/config" "$ocd_dir/secrets"
 chmod 700 "$ocd_dir" "$ocd_dir/config" "$ocd_dir/secrets"
+
+# skills subcommand: one-shot installer runs against the image-baked
+# my-skills checkout (no network, no --host-access). Host paths are
+# translated to their in-container locations: --global maps to the global
+# config file, --project DIR (default: cwd) mounts DIR at /workspace.
+if [ "${1:-}" = "skills" ]; then
+    shift
+    SKILL_ARGS=()
+    SKILL_GLOBAL=0
+    SKILL_WS=""
+    args=("$@")
+    for ((i = 0; i < ${#args[@]}; i++)); do
+        case "${args[i]}" in
+            --global) SKILL_GLOBAL=1 ;;
+            --project)
+                i=$((i + 1))
+                [ "$i" -lt "${#args[@]}" ] || { echo "error: --project requires a directory" >&2; exit 2; }
+                SKILL_WS="$(readlink -f "${args[i]}")"
+                SKILL_ARGS+=(--project /workspace)
+                ;;
+            *) SKILL_ARGS+=("${args[i]}") ;;
+        esac
+    done
+    if [ "$SKILL_GLOBAL" = 1 ]; then
+        # enable/disable write via the native skills key; --config is the
+        # installer's fixed-path target for the mounted global config.
+        case "${SKILL_ARGS[0]:-}" in
+            enable|disable) SKILL_ARGS+=(--config /app/.config/opencode/opencode.json) ;;
+        esac
+        SKILL_WS=""
+    elif [ -z "$SKILL_WS" ]; then
+        SKILL_WS="$(readlink -f "$(pwd)")"
+        SKILL_ARGS+=(--project /workspace)
+    fi
+    if [ -n "$SKILL_WS" ] && [ ! -d "$SKILL_WS" ]; then
+        echo "Error: workspace path is not an existing directory: $SKILL_WS" >&2
+        exit 1
+    fi
+    SKILL_MOUNTS=(-v "$ocd_dir:/app:rw,Z" -v "$ocd_dir/config:/app/.config/opencode:rw,Z")
+    SKILL_WORKDIR=/app
+    if [ -n "$SKILL_WS" ]; then
+        SKILL_MOUNTS+=(-v "$SKILL_WS:/workspace:rw,Z")
+        SKILL_WORKDIR=/workspace
+    fi
+    exec "$ENGINE" run --rm -i \
+        "${USERNS_ARGS[@]}" \
+        --workdir "$SKILL_WORKDIR" \
+        --read-only \
+        --tmpfs /tmp:exec,size=512m,mode=1777 \
+        --cap-drop=ALL \
+        --security-opt=no-new-privileges \
+        --env PYTHONDONTWRITEBYTECODE=1 \
+        "${SKILL_MOUNTS[@]}" \
+        --entrypoint /usr/bin/python3 \
+        opencode-container:latest \
+        /opt/my-skills/scripts/install_skills.py "${SKILL_ARGS[@]}"
+fi
 
 # Remove env files created by older launcher versions; bootstrap reads mounted secrets.
 rm -f "$ocd_dir/.env"
@@ -232,12 +310,6 @@ if [ -t 0 ]; then
     RUN_FLAGS="-it"
 else
     RUN_FLAGS="-i"
-fi
-
-USERNS_ARGS=()
-if [ "$ENGINE" = podman ]; then
-    # ponytail: keep-id is rootless-only; rootful podman (sudo) will reject it
-    USERNS_ARGS=(--userns=keep-id)
 fi
 
 if [ "$HOST_ACCESS" = 1 ]; then
