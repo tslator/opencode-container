@@ -200,6 +200,14 @@ repo_dir="${OPENCODE_CONTAINER_REPO:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 mkdir -p "$ocd_dir/.config" "$ocd_dir/config" "$ocd_dir/secrets"
 chmod 700 "$ocd_dir" "$ocd_dir/config" "$ocd_dir/secrets"
 
+# Seed the host bdui service wrapper used by systemd/bdui.service (see README
+# "Bundled web UI"); kept in sync with the repo copy on every launch.
+if [ -f "$repo_dir/systemd/bdui-serve.sh" ] \
+        && ! cmp -s "$repo_dir/systemd/bdui-serve.sh" "$ocd_dir/bdui-serve.sh" 2>/dev/null; then
+    cp "$repo_dir/systemd/bdui-serve.sh" "$ocd_dir/bdui-serve.sh"
+    chmod +x "$ocd_dir/bdui-serve.sh"
+fi
+
 # skills subcommand: one-shot installer runs against the image-baked
 # my-skills checkout (no network, no --host-access). Host paths are
 # translated to their in-container locations: --global maps to the global
@@ -291,6 +299,23 @@ if [ -d "$ws_root/opencode" ] && [ ! -d "$ws_root/share" ]; then
     done
 fi
 mkdir -p "$ws_root/share" "$ws_root/state" "$ws_root/plans"
+
+# Host bdui auto-registration: when a host-level bdui service (systemd/)
+# answers and this workspace has beads, add it to the host UI's workspace
+# dropdown and record it for re-registration after service restarts. Skipped
+# when --bdui chose the container-private server instead. Silent no-op when no
+# service is running. Override the URL with OPENCODE_CONTAINER_BDUI_HOST_URL.
+if [ "$BDUI_OPTIN" != 1 ] && [ -d "$WORKSPACE/.beads" ] && command -v curl >/dev/null 2>&1; then
+    bdui_host_url="${OPENCODE_CONTAINER_BDUI_HOST_URL:-http://127.0.0.1:3000}"
+    if curl -sf -m 1 "$bdui_host_url/api/workspaces" >/dev/null 2>&1; then
+        bdui_list="$ocd_dir/bdui-workspaces.txt"
+        grep -Fxq "$WORKSPACE" "$bdui_list" 2>/dev/null || echo "$WORKSPACE" >> "$bdui_list"
+        curl -sf -m 2 -X POST "$bdui_host_url/api/register-workspace" \
+            -H 'content-type: application/json' \
+            -d "{\"path\":\"$WORKSPACE\",\"database\":\"$WORKSPACE/.beads\"}" >/dev/null 2>&1 \
+            || echo "warning: host bdui registration failed (continuing)" >&2
+    fi
+fi
 
 reject_proxy_credentials() {
     case "$1" in

@@ -1,0 +1,24 @@
+# Host-level beads-ui (bdui) server: one dropdown for every bead workspace.
+# Install (the launcher seeds ~/.opencode-container/bdui-serve.sh automatically
+# on the next run):
+#   mkdir -p ~/.config/systemd/user
+#   cp systemd/bdui.service ~/.config/systemd/user/bdui.service
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now bdui
+# Requires node + `npm i -g beads-ui` on the host.
+
+[Unit]
+Description=beads-ui (bdui) host server for all bead workspaces
+Documentation=https://github.com/mantoni/beads-ui
+
+[Service]
+Type=simple
+Environment=HOST=127.0.0.1
+Environment=PORT=3000
+Environment=BDUI_RUNTIME_DIR=%t/beads-ui
+ExecStart=/bin/sh %h/.opencode-container/bdui-serve.sh
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

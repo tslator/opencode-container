@@ -5,7 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEST_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEST_DIR"' EXIT
 
-mkdir -p "$TEST_DIR/bin" "$TEST_DIR/home" "$TEST_DIR/workspace" "$TEST_DIR/repo/config"
+mkdir -p "$TEST_DIR/bin" "$TEST_DIR/home" "$TEST_DIR/workspace" "$TEST_DIR/repo/config" "$TEST_DIR/repo/systemd"
+cp "$ROOT_DIR/systemd/bdui-serve.sh" "$TEST_DIR/repo/systemd/"
 cat > "$TEST_DIR/bin/podman" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$@" > "$ARGS_FILE"
@@ -137,5 +138,74 @@ OPENCODE_WORKSPACE="$TEST_DIR/workspace" \
   "$ROOT_DIR/bin/opencode-container"
 grep -F -- '3000' "$TEST_DIR/args_nobdui" && exit 1
 grep -Fx -- 'OPENCODE_CONTAINER_BDUI=1' "$TEST_DIR/args_nobdui" && exit 1
+
+# host bdui service wrapper is seeded from the repo
+cmp -s "$ROOT_DIR/systemd/bdui-serve.sh" "$TEST_DIR/home/.opencode-container/bdui-serve.sh"
+
+# --- host bdui auto-registration ---------------------------------------------
+# stub bdui server: answers /api/workspaces, records POST bodies
+python3 - "$TEST_DIR" <<'PY' &
+import http.server, pathlib, sys
+d = pathlib.Path(sys.argv[1])
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200); self.end_headers()
+        self.wfile.write(b'{"ok":true,"workspaces":[]}')
+    def do_POST(self):
+        n = int(self.headers.get('content-length', 0))
+        d.joinpath('bdui-post.json').write_bytes(self.rfile.read(n))
+        self.send_response(200); self.end_headers(); self.wfile.write(b'{"ok":true}')
+    def log_message(self, *a): pass
+srv = http.server.HTTPServer(('127.0.0.1', 0), H)
+d.joinpath('bdui-port').write_text(str(srv.server_address[1]))
+srv.serve_forever()
+PY
+STUB_PID=$!
+for i in $(seq 1 50); do [ -f "$TEST_DIR/bdui-port" ] && break; sleep 0.1; done
+BDUI_URL="http://127.0.0.1:$(cat "$TEST_DIR/bdui-port")"
+trap 'kill $STUB_PID 2>/dev/null || true; rm -rf "$TEST_DIR"' EXIT
+
+# no .beads: no registration
+ARGS_FILE="$TEST_DIR/args_noreg" \
+HOME="$TEST_DIR/home" \
+PATH="$TEST_DIR/bin:$PATH" \
+OPENCODE_CONTAINER_REPO="$TEST_DIR/repo" \
+OPENCODE_WORKSPACE="$TEST_DIR/workspace" \
+OPENCODE_CONTAINER_BDUI_HOST_URL="$BDUI_URL" \
+  "$ROOT_DIR/bin/opencode-container"
+[ ! -f "$TEST_DIR/home/.opencode-container/bdui-workspaces.txt" ]
+
+# .beads present: registered + recorded
+mkdir -p "$TEST_DIR/workspace/.beads"
+ARGS_FILE="$TEST_DIR/args_reg" \
+HOME="$TEST_DIR/home" \
+PATH="$TEST_DIR/bin:$PATH" \
+OPENCODE_CONTAINER_REPO="$TEST_DIR/repo" \
+OPENCODE_WORKSPACE="$TEST_DIR/workspace" \
+OPENCODE_CONTAINER_BDUI_HOST_URL="$BDUI_URL" \
+  "$ROOT_DIR/bin/opencode-container"
+grep -Fxq "$(readlink -f "$TEST_DIR/workspace")" "$TEST_DIR/home/.opencode-container/bdui-workspaces.txt"
+grep -F '"database"' "$TEST_DIR/bdui-post.json" | grep -Fq '.beads'
+
+# --bdui (container-private) skips host registration
+rm "$TEST_DIR/bdui-post.json"
+ARGS_FILE="$TEST_DIR/args_reg2" \
+HOME="$TEST_DIR/home" \
+PATH="$TEST_DIR/bin:$PATH" \
+OPENCODE_CONTAINER_REPO="$TEST_DIR/repo" \
+OPENCODE_WORKSPACE="$TEST_DIR/workspace" \
+OPENCODE_CONTAINER_BDUI_HOST_URL="$BDUI_URL" \
+  "$ROOT_DIR/bin/opencode-container" --bdui
+[ ! -f "$TEST_DIR/bdui-post.json" ]
+
+# dead server: launcher unaffected, nothing recorded
+ARGS_FILE="$TEST_DIR/args_dead" \
+HOME="$TEST_DIR/home" \
+PATH="$TEST_DIR/bin:$PATH" \
+OPENCODE_CONTAINER_REPO="$TEST_DIR/repo" \
+OPENCODE_WORKSPACE="$TEST_DIR/workspace" \
+OPENCODE_CONTAINER_BDUI_HOST_URL="http://127.0.0.1:1" \
+  "$ROOT_DIR/bin/opencode-container"
+grep -Fxq "$(readlink -f "$TEST_DIR/workspace")" "$TEST_DIR/home/.opencode-container/bdui-workspaces.txt"
 
 echo "launcher mount and environment checks passed"

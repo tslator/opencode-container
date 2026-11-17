@@ -55,7 +55,7 @@ The `bin/opencode-container` script is the recommended way to run OpenCode Conta
 | `-u`, `--update-config` | off | Overwrite `~/.opencode-container/config/` with the repo's `config/` |
 | `--herdr` | off | Start OpenCode inside a [herdr](https://herdr.dev) pane (terminal multiplexer for agents) |
 | `--beads` | off | Run `bd init` automatically on first launch in a workspace without `.beads/` |
-| `--bdui` | off | Start the [beads-ui](https://github.com/mantoni/beads-ui) web server in the container and publish a per-workspace `127.0.0.1` port (prints the URL) |
+| `--bdui` | off | Start the [beads-ui](https://github.com/mantoni/beads-ui) web server in the container and publish a per-workspace `127.0.0.1` port (prints the URL); see also the [host bdui service](#host-bdui-service-with-auto-registration) |
 | `--bdui-port` | hashed | Override the host port used by `--bdui` |
 | `--memory` | `4g` | Container memory limit |
 | `--cpus` | `4` | Container CPU count |
@@ -126,6 +126,24 @@ The image ships the pinned [beads-ui](https://github.com/mantoni/beads-ui) npm p
 **Multi-project:** each container has its own network namespace and runtime dir, so N project folders = N containers, each running its own bdui. The default host port is derived from the workspace path (`3000 + cksum(path) % 1000`), so a given project always gets the same URL and concurrent projects almost never collide — but the hash can collide (birthday-paradox odds rise around ~40 concurrent projects in the 1000-port space). On collision the container fails to start the port mapping; fix with `--bdui-port N` (or `OPENCODE_CONTAINER_BDUI_PORT`) to pick a free port.
 
 **Single-host alternative:** bdui natively supports multiple workspaces (REST `POST /api/register-workspace`, in-UI workspace picker). If you prefer one bookmarked URL for all projects, run `npm i -g beads-ui && bdui start` on the host and register each project folder — e.g. `curl -X POST http://127.0.0.1:3000/api/register-workspace -H 'content-type: application/json' -d '{"path":"/path/to/project","database":"/path/to/project/.beads"}'` — the host `bd` reads each repo's beads DB directly, so no container or port juggling is needed. Use `--bdui` per container instead when the beads DB must stay container-private.
+
+#### Host bdui service with auto-registration
+
+For a permanent single-host UI, the repo ships a systemd **user** service that runs one host bdui server and keeps every bead workspace in its dropdown automatically:
+
+- `systemd/bdui.service` — `Type=simple` unit (foreground node server on `127.0.0.1:3000`)
+- `systemd/bdui-serve.sh` — wrapper that locates node + beads-ui (nvm-aware), starts the server, then re-registers every workspace listed in `~/.opencode-container/bdui-workspaces.txt` (API registrations are in-memory only and would otherwise be lost on every service restart)
+
+Install (the launcher seeds `~/.opencode-container/bdui-serve.sh` from the repo automatically on every run):
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp systemd/bdui.service ~/.config/systemd/user/bdui.service
+systemctl --user daemon-reload
+systemctl --user enable --now bdui
+```
+
+Then just use `opencode-container` normally: whenever the workspace has a `.beads/` directory and the host service answers on `http://127.0.0.1:3000`, the launcher POSTs `register-workspace` with the host paths and appends the workspace to `bdui-workspaces.txt`, so it appears in the dropdown at <http://127.0.0.1:3000> — and reappears after `systemctl --user restart bdui` or a reboot. The check is a 1-second probe; with no service running the launcher is silent and unaffected. Set `OPENCODE_CONTAINER_BDUI_HOST_URL` to point at a different URL, and skip auto-registration entirely by passing `--bdui` (container-private server takes precedence).
 
 ### Bundled terminal tools: lazygit and ttt
 
