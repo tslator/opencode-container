@@ -1,6 +1,6 @@
 # Plan: Skills in the container image
 
-**Status:** approved design, not yet implemented
+**Status:** design approved; validation gates passed (etw); implementation pending
 **Date:** 2026-11-17
 
 ## Goal
@@ -106,14 +106,21 @@ decide activation.
   `.opencode/opencode.json`. Subsequent changes ("added Qt") are the same
   interview, no special mode.
 
-## Validation gates (before implementation sign-off)
+## Validation gates — PASSED (bead etw, 2026-11-17, opencode 2.0.9 in-image)
 
-1. **Blocking:** confirm a project-level `skills` array **appends** to the
-   global array rather than replacing it (two-file experiment).
-2. Confirm whether editing `skills` while a session runs is picked up by the
-   file watcher or requires restart; document.
-3. Confirm unknown/missing paths in `skills` degrade with a warning rather
-   than a hard failure (typo/drift safety).
+Probed with a live `opencode serve` inside the production image (global config
+mounted at `/app/.config/opencode`, project config at `/workspace/.opencode`,
+distinct probe skills per layer):
+
+1. **Merge semantics — confirmed append.** A project-level `skills` array
+   **adds to** the global array; skills from both layers are advertised
+   simultaneously. The global/project layering design is sound.
+2. **Live reload — watcher picks it up.** Editing the project `skills` array
+   while the server runs surfaces newly referenced skills within seconds,
+   **no restart or `/api/location/reload` needed**.
+3. **Unknown paths — tolerated.** A nonexistent path in `skills` neither
+   crashes the server nor hides other skills; typo/drift in config degrades
+   gracefully.
 
 ## Rejected alternatives
 
