@@ -99,6 +99,9 @@ OPENCODE_WORKSPACE=/path/to/project opencode-container
 
 # Raise resource limits for a heavy session
 opencode-container --memory 8g --cpus 8
+
+# Manage the baked skill library (see Skills Library below)
+opencode-container skills enable --global
 ```
 
 ### Bundled agent tools: beads and herdr
@@ -175,10 +178,51 @@ When using the wrapper script (`bin/opencode-container`):
 | **Sessions** | `~/.opencode-container/projects/<name>-<hash>/share/` | Per-workspace session store (keyed by workspace path) |
 | **TUI state** | `~/.opencode-container/projects/<name>-<hash>/state/` | Per-workspace tabs, prompt history, model selection |
 | **Secrets** | `~/.opencode-container/secrets/` | API keys and credentials |
-| **Config** | `./config/` (this repo) | OpenCode configuration, MCP servers, custom skills |
+| **Config** | `./config/` (this repo) | OpenCode configuration, MCP servers, global skill enablement |
 | **Workspace** | Current directory | Your project files |
 
 Because every workspace mounts at `/workspace` inside the container, OpenCode would otherwise merge all projects' sessions into one list and restore another workspace's session tabs (its TUI state keys tabs by cwd). The launcher therefore mounts a dedicated session store at `/app/.local/share` and TUI state at `/app/.local/state` per workspace path. Older versions kept a single shared store at `~/.opencode-container/.local/share/opencode/`; that history is no longer shown and can be deleted once you no longer need it.
+
+## Skills Library
+
+The image bakes the [my-skills](https://github.com/tslator/my-skills) skill library at `/opt/my-skills` (stable symlink: `/opt/skills`), root-owned so the agent cannot edit its own skill sources. No network access or `--host-access` is involved: skill content ships in the image, and enablement is plain OpenCode configuration — the native `skills` key in `opencode.json` lists directories to discover skills from.
+
+### Global vs project layering
+
+| Layer | File | For |
+|-------|------|-----|
+| Global | `~/.opencode-container/config/opencode.json` | how-you-work skills (workflow, orchestration, `meta-skill-library-admin`) |
+| Project | `<project>/opencode.json` (or `.opencode/opencode.json`) | language/domain skills (e.g. Python) |
+
+Project entries **append** to global ones (both layers are active together), edits are picked up live by the config watcher — no restart — and unknown paths degrade with a warning instead of failing.
+
+### Managing skills
+
+```bash
+# enable the whole library globally (writes the global config's skills array)
+opencode-container skills enable --global
+
+# enable for one project (default: current directory)
+cd ~/my-python-project && opencode-container skills enable
+
+# inspect / remove / other installer subcommands
+opencode-container skills status
+opencode-container skills disable --global
+opencode-container skills list
+```
+
+`skills <args...>` runs the image-baked installer (`/opt/my-skills/scripts/install_skills.py`) in a one-shot hardened container; `--global` maps to the mounted global config, `--project DIR` mounts `DIR`. Inside a session, the baked `meta-skill-library-admin` skill (default-enabled) can interview you and curate per-skill selections directly.
+
+**First run:** the default config enables only `meta-skill-library-admin`. Just ask the agent — e.g. "help me choose skills for this project" — and it will walk the taxonomy with you and write the right config layer. Existing state dirs predate the default; run `opencode-container -u` once (or `opencode-container skills enable --global`) to adopt it.
+
+### Updating skill content
+
+Enablement changes are config edits only. To pick up new or changed skills from the library, bump the pin and rebuild:
+
+```bash
+make skills-bump   # re-pin vendor/my-skills.sha to upstream HEAD
+make build         # re-vendor the checkout and rebuild the image
+```
 
 ## Advanced Usage
 
@@ -203,6 +247,10 @@ authenticate requests and should not expose administrative endpoints to the
 agent. On Linux, host services must listen beyond `127.0.0.1` — bind them to
 `0.0.0.0` (or, with Docker, the bridge IP usually `172.17.0.1`) if access is
 required.
+
+**Note:** skills no longer need `--host-access` — the skill library ships in
+the image (see [Skills Library](#skills-library)); host access is only for
+reaching host-run services such as model gateways.
 
 **Example — OmniRoute gateway:** with Omniroute listening on port 20128, paste this into `~/.opencode-container/config/opencode.json`, then launch `opencode-container --host-access`. It serves an OpenAI-compatible `/v1` and is keyless by default; if a key is ever needed, add `"apiKey": "{env:OMNIROUTE_API_KEY}"` under `options`. Podman users: use `host.containers.internal` in `baseURL` instead.
 
