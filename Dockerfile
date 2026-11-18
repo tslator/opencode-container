@@ -102,12 +102,13 @@ RUN node --version && \
 COPY scripts/collect-runtime-deps.sh /usr/local/bin/collect-runtime-deps.sh
 RUN chmod 0755 /usr/local/bin/collect-runtime-deps.sh
 
-# Agent tooling: beads (bd), herdr, lazygit, and ttt release binaries, pinned
+# Agent tooling: beads (bd), herdr, lazygit, ttt, and uv release binaries, pinned
 # by version and sha256. Assets and checksums come from the upstream releases:
 #   beads:    https://github.com/gastownhall/beads/releases (beads_<ver>_linux_<arch>.tar.gz)
 #   herdr:    https://herdr.dev/latest.json (same manifest `herdr update` uses)
 #   lazygit:  https://github.com/jesseduffield/lazygit/releases (lazygit_<ver>_linux_<arch>.tar.gz)
 #   ttt:      https://github.com/eugenioenko/ttt/releases (ttt-linux-<arch>)
+#   uv:       https://github.com/astral-sh/uv/releases (uv_<arch>-unknown-linux-gnu.tar.gz + .sha256)
 FROM debian:13-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS agent-tools
 
 ARG BD_VERSION=1.3.4
@@ -122,6 +123,9 @@ ARG LAZYGIT_SHA256_ARM64=ac0b48237f3d0283813e7154ec063237e519532feb0470c0881a179
 ARG TTT_VERSION=1.12.1
 ARG TTT_SHA256_AMD64=e6b5bb64b897810349fb46f8319559f65c6e5f1a40e26a93bd6860b6f7f7b6de
 ARG TTT_SHA256_ARM64=f88c3f38b726efb1ce35dede745e6a0f3d7083c15fd6f75f17dc8fb68c7c857b
+ARG UV_VERSION=0.13.9
+ARG UV_SHA256_AMD64=a7fbaff2b9a271d85c1bdb540941090fd1ce011797b4abeb48e4dcd39c2471d5
+ARG UV_SHA256_ARM64=0797542018e541a9288855df555c8077eed06f7a47d206362030480e8ecc9f3d
 ARG TARGETARCH
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
@@ -141,8 +145,8 @@ RUN export http_proxy="${http_proxy:-${HTTP_PROXY:-}}" https_proxy="${https_prox
 RUN export http_proxy="${http_proxy:-${HTTP_PROXY:-}}" https_proxy="${https_proxy:-${HTTPS_PROXY:-}}" no_proxy="${no_proxy:-${NO_PROXY:-}}"; \
     set -eu; \
     case "${TARGETARCH:-amd64}" in \
-      amd64) bd_arch=amd64; herdr_arch=x86_64; lazygit_arch=x86_64; ttt_arch=amd64; bd_sha="$BD_SHA256_AMD64"; herdr_sha="$HERDR_SHA256_AMD64"; lazygit_sha="$LAZYGIT_SHA256_AMD64"; ttt_sha="$TTT_SHA256_AMD64" ;; \
-      arm64) bd_arch=arm64; herdr_arch=aarch64; lazygit_arch=arm64; ttt_arch=arm64; bd_sha="$BD_SHA256_ARM64"; herdr_sha="$HERDR_SHA256_ARM64"; lazygit_sha="$LAZYGIT_SHA256_ARM64"; ttt_sha="$TTT_SHA256_ARM64" ;; \
+      amd64) bd_arch=amd64; herdr_arch=x86_64; lazygit_arch=x86_64; ttt_arch=amd64; uv_triple=x86_64-unknown-linux-gnu; bd_sha="$BD_SHA256_AMD64"; herdr_sha="$HERDR_SHA256_AMD64"; lazygit_sha="$LAZYGIT_SHA256_AMD64"; ttt_sha="$TTT_SHA256_AMD64"; uv_sha="$UV_SHA256_AMD64" ;; \
+      arm64) bd_arch=arm64; herdr_arch=aarch64; lazygit_arch=arm64; ttt_arch=arm64; uv_triple=aarch64-unknown-linux-gnu; bd_sha="$BD_SHA256_ARM64"; herdr_sha="$HERDR_SHA256_ARM64"; lazygit_sha="$LAZYGIT_SHA256_ARM64"; ttt_sha="$TTT_SHA256_ARM64"; uv_sha="$UV_SHA256_ARM64" ;; \
       *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
     workdir="$(mktemp -d)"; cd "$workdir"; \
@@ -161,10 +165,16 @@ RUN export http_proxy="${http_proxy:-${HTTP_PROXY:-}}" https_proxy="${https_prox
     curl -fsSL -o ttt "https://github.com/eugenioenko/ttt/releases/download/v${TTT_VERSION}/ttt-linux-${ttt_arch}"; \
     echo "${ttt_sha}  ttt" | sha256sum -c -; \
     install -m 0755 ttt /out/bin/ttt; \
+    curl -fsSL -o "uv-${uv_triple}.tar.gz" "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-${uv_triple}.tar.gz"; \
+    echo "${uv_sha}  uv-${uv_triple}.tar.gz" | sha256sum -c -; \
+    tar -xzf "uv-${uv_triple}.tar.gz"; \
+    install -m 0755 "uv-${uv_triple}/uv" /out/bin/uv; \
+    install -m 0755 "uv-${uv_triple}/uvx" /out/bin/uvx; \
     /out/bin/bd version; \
     /out/bin/herdr --version; \
     /out/bin/lazygit --version; \
     /out/bin/ttt --version; \
+    /out/bin/uv --version; \
     cd /; rm -rf "$workdir"
 
 FROM builder-tools AS collector
@@ -175,6 +185,8 @@ COPY --from=agent-tools /out/bin/bd /usr/local/bin/bd
 COPY --from=agent-tools /out/bin/herdr /usr/local/bin/herdr
 COPY --from=agent-tools /out/bin/lazygit /usr/local/bin/lazygit
 COPY --from=agent-tools /out/bin/ttt /usr/local/bin/ttt
+COPY --from=agent-tools /out/bin/uv /usr/local/bin/uv
+COPY --from=agent-tools /out/bin/uvx /usr/local/bin/uvx
 RUN ln -s bd /usr/local/bin/beads
 
 ARG USER_UID=1000
@@ -183,7 +195,7 @@ ARG USER_GID=1000
 RUN mkdir -p /opt/runtime-rootfs && \
     /usr/local/bin/collect-runtime-deps.sh /opt/runtime-rootfs \
       opencode node npm python3 git \
-      bd beads herdr lazygit ttt bdui \
+      bd beads herdr lazygit ttt bdui uv uvx \
       /usr/lib/git-core/git-remote-http /usr/lib/git-core/git-remote-https \
       mkdir find grep rg jq cat head tail sed awk \
       ls cp mv rm chmod wc sort cut env date dirname basename sh
@@ -212,7 +224,11 @@ RUN mkdir -p /opt/runtime-rootfs/app/.local/share /opt/runtime-rootfs/app/.local
     mkdir -p /opt/runtime-rootfs/opt && \
     ln -s /opt/my-skills /opt/runtime-rootfs/opt/skills && \
     chown -R ${USER_UID}:${USER_GID} /opt/runtime-rootfs/app && \
-    printf 'opencode:x:%s:%s:OpenCode User:/app:/usr/bin/python3\n' "${USER_UID}" "${USER_GID}" >> /opt/runtime-rootfs/etc/passwd && \
+    # Login shell must be the shipped POSIX shell, not python3: herdr resolves
+    # pane shells from /etc/passwd and exports $SHELL, and OpenCode's shell tool
+    # honors $SHELL — a python3 login shell makes it exec every command as
+    # Python source (SyntaxError/NameError).
+    printf 'opencode:x:%s:%s:OpenCode User:/app:/usr/bin/sh\n' "${USER_UID}" "${USER_GID}" >> /opt/runtime-rootfs/etc/passwd && \
     printf 'opencode:x:%s:\n' "${USER_GID}" >> /opt/runtime-rootfs/etc/group
 
 FROM gcr.io/distroless/base-debian13@sha256:9ef50bca108839d5986e4d84b7f7b2d79024c9293b7c35b162c6c55485bd5868 AS final
