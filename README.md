@@ -392,7 +392,7 @@ The image uses a multi-stage build with a distroless runtime:
 
 - **Base:** `gcr.io/distroless/base-debian13` (no package manager; Debian `dash` is added as `/bin/sh` for OpenCode's shell tool and npm)
 - **Node.js:** Node 24 from NodeSource, runtime dependencies extracted via `collect-runtime-deps.sh`
-- **Python:** Python 3 with venv support from Debian 13
+- **Python:** Python 3 with venv support from Debian 13, plus pinned [uv](https://github.com/astral-sh/uv) release binaries (`uv`, `uvx`) for fast package/project management
 - **OpenCode:** installed via the official, checksum-verified installer in the build stage
 - **Runtime collector:** resolves and verifies every executable in the Dockerfile manifest before the final image is assembled
 - **Bootstrap:** `bootstrap.py` loads supported secrets from `/run/secrets`, then execs OpenCode
