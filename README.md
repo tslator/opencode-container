@@ -15,14 +15,14 @@ Run it with the canonical launcher:
 ### Prerequisites
 
 - [Podman](https://podman.io/docs/installation) or [Docker](https://docs.docker.com/get-docker/) installed on your machine.
-- Make
-- `curl` and `jq` (required for `make build-latest`)
+- Bash (the `bin/oc-dev` helper; no task runner to install)
+- `curl` and `jq` (required for `bin/oc-dev build-latest`)
 
 ### Quick Start
 
 ```bash
 # Build the image
-make build
+./bin/oc-dev build
 
 # Add a provider API key (one-time)
 mkdir -p ~/.opencode-container/secrets
@@ -115,7 +115,7 @@ The image ships pinned release binaries for [beads](https://github.com/gastownha
 
 To iterate on either binary without rebuilding the image, drop a replacement in `~/.opencode-container/bin/` (e.g. `~/.opencode-container/bin/herdr`); it is mounted read-only at `/opt/host-tools` and takes PATH precedence.
 
-After bumping `HERDR_VERSION` in the Dockerfile, regenerate the bundled skill: `make herdr-skill`.
+After bumping `HERDR_VERSION` in the Dockerfile, regenerate the bundled skill: `bin/oc-dev herdr-skill`.
 
 ### Bundled web UI: bdui (beads-ui)
 
@@ -270,8 +270,8 @@ opencode-container skills list
 Enablement changes are config edits only. To pick up new or changed skills from the library, bump the pin and rebuild:
 
 ```bash
-make skills-bump   # re-pin vendor/my-skills.sha to upstream HEAD
-make build         # re-vendor the checkout and rebuild the image
+bin/oc-dev skills-bump   # re-pin vendor/my-skills.sha to upstream HEAD
+bin/oc-dev build         # re-vendor the checkout and rebuild the image
 ```
 
 ## Advanced Usage
@@ -324,12 +324,13 @@ reaching host-run services such as model gateways.
 ### Development Commands
 
 ```bash
-make build                      # Build with auto-detected UID/GID
-make build VERSION=2.0.9         # Build a specific OpenCode version
-make build-latest               # Build the latest OpenCode release
-make tag-latest VERSION=2.0.9    # Tag a built version as latest
-make shell                      # Debug shell (builder-tools stage with bash)
-make clean                      # Remove image
+bin/oc-dev --help                       # list all commands
+bin/oc-dev build                        # Build with auto-detected UID/GID
+bin/oc-dev build 2.0.9                  # Build a specific OpenCode version
+bin/oc-dev build-latest                 # Build the latest OpenCode release
+bin/oc-dev tag-latest 2.0.9             # Tag a built version as latest
+bin/oc-dev shell                        # Debug shell (builder-tools stage with bash)
+bin/oc-dev clean                        # Remove image
 ```
 
 The version examples above match `ARG OPENCODE_VERSION` in the Dockerfile; check there for the current default.
@@ -367,11 +368,11 @@ docker build --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g) -t open
 docker build --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g) -t opencode-container:2.0.9 .
 ```
 
-`make build` does this for you with whichever engine is installed (override with `ENGINE=docker` or `ENGINE=podman`).
+`bin/oc-dev build` does this for you with whichever engine is installed (override with `CONTAINER_ENGINE=docker` or `CONTAINER_ENGINE=podman`).
 
 ### Adding a Custom CA Bundle
 
-Place an optional PEM bundle named `custom-ca.crt` at the build-context root and run `make build`. The image keeps Debian's default certificates, splits and validates each certificate from the bundle, then runs `update-ca-certificates` after `ca-certificates` is installed. The normalized certificates are retained so hash-based TLS lookups continue to work in the distroless runtime.
+Place an optional PEM bundle named `custom-ca.crt` at the build-context root and run `bin/oc-dev build`. The image keeps Debian's default certificates, splits and validates each certificate from the bundle, then runs `update-ca-certificates` after `ca-certificates` is installed. The normalized certificates are retained so hash-based TLS lookups continue to work in the distroless runtime.
 
 This uses a BuildKit-capable builder to read the optional file without requiring a placeholder in the repository.
 
@@ -379,20 +380,20 @@ The custom CA is installed before the remaining build-time HTTPS downloads, incl
 
 ### Building Behind a Proxy
 
-Export credential-free proxy variables in your shell and `make build` / `make build-builder-tools`. BuildKit supplies them to network commands without storing them as image `ENV` values; runtime commands receive both upper- and lower-case forms (so apt/curl/npm all pick them up):
+Export credential-free proxy variables in your shell and `bin/oc-dev build` / `bin/oc-dev build-builder-tools`. BuildKit supplies them to network commands without storing them as image `ENV` values; runtime commands receive both upper- and lower-case forms (so apt/curl/npm all pick them up):
 
 ```bash
 export HTTP_PROXY=http://proxy.example:3128
 export HTTPS_PROXY=$HTTP_PROXY
 export NO_PROXY=localhost,127.0.0.1
-make build
+bin/oc-dev build
 ```
 
 Credential-free proxy URLs are forwarded into the running container, so
 OpenCode inside it can reach the network. Proxy URLs containing embedded
 credentials are rejected; use a credential-free proxy or configure proxy
 authentication outside this launcher. If a previously failed (no-proxy) build
-left stale layers, run `make prune-cache` first. Note: if your proxy terminates
+left stale layers, run `bin/oc-dev prune-cache` first. Note: if your proxy terminates
 TLS with a corporate CA certificate, build-time certificate validation will
 still fail unless that CA is added to the image.
 

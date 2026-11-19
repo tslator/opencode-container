@@ -249,7 +249,7 @@ ENV NPM_CONFIG_CAFILE=/etc/ssl/certs/ca-certificates.crt
 COPY --from=collector /opt/runtime-rootfs/ /
 COPY --chmod=0755 bootstrap.py /usr/local/bin/bootstrap.py
 
-# Skills library vendored from tslator/my-skills (see `make skills`); root-owned
+# Skills library vendored from tslator/my-skills (see `bin/oc-dev skills`); root-owned
 # so the agent cannot edit its own skill sources. The /opt/skills symlink ships
 # via the collector rootfs (distroless has no ln) as a stable indirection so
 # config paths survive repo-layout changes.

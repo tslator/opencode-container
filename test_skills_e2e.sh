@@ -6,7 +6,7 @@
 # passthrough, then start `opencode serve` inside the image and verify both
 # layers are advertised (union). Asserts no network/host paths are involved.
 #
-# Requires the built image (make build) and, for podman, save/load to make
+# Requires the built image (bin/oc-dev build) and, for podman, save/load to make
 # the image visible in the throwaway HOME's rootless storage.
 set -euo pipefail
 

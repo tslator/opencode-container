@@ -46,7 +46,7 @@ decide activation.
 
 ### 1. Build (opencode-container)
 
-- `make skills` clones `tslator/my-skills` (private repo; host `gh`/SSH auth)
+- `bin/oc-dev skills` clones `tslator/my-skills` (private repo; host `gh`/SSH auth)
   at a pinned commit into `vendor/my-skills/` in the build context.
   `vendor/my-skills.sha` records the pin.
 - Dockerfile (final stage): `COPY vendor/my-skills /opt/my-skills`

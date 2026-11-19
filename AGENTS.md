@@ -12,7 +12,7 @@ OpenCode Container — containerized environment for running OpenCode CLI (Docke
 
 Final image is `gcr.io/distroless/base-debian13`:
 - **No `/bin/bash`; `/bin/sh` (dash) is shipped** because OpenCode's shell tool and npm lifecycle scripts require it — cannot exec into production container
-- To debug: `make shell` (uses builder-tools stage with bash)
+- To debug: `bin/oc-dev shell` (uses builder-tools stage with bash)
 - Available commands: `sh mkdir find grep rg jq cat head tail sed awk echo ls cp mv rm chmod wc sort cut env pwd date dirname basename`
 - Python 3, Node 24, git, `bd`/`beads` (beads), `bdui` (beads-ui web server, `--bdui` launcher flag), `herdr`, `lazygit`, `ttt` (terminal editor), and `uv`/`uvx` (Python package/project manager) also available
 
