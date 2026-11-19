@@ -1,0 +1,212 @@
+#!/usr/bin/env bash
+#
+# oc-dev — maintainer CLI for the opencode-container image
+# Replaces the Makefile task targets with a discoverable CLI (run --help).
+#
+# Subcommands:
+#   build [VERSION]        Build the image (auto UID/GID, optional version tag)
+#   build-builder-tools    Build the debug builder-tools stage image
+#   build-latest           Build the latest OpenCode npm release and tag it latest
+#   tag-latest VERSION     Tag an already-built VERSION as :latest
+#   shell                  Interactive debug shell (builder-tools stage, has bash)
+#   skills                 Re-vendor the pinned my-skills checkout (requires gh)
+#   skills-bump            Re-pin vendor/my-skills.sha to upstream HEAD
+#   herdr-skill            Regenerate config/skills/herdr/SKILL.md from the image
+#   clean                  Remove the opencode-container image
+#   prune-cache            Prune the engine's build cache
+#
+# Environment:
+#   CONTAINER_ENGINE       podman or docker (auto-detected if unset)
+#   VERSION                default version for build / build-builder-tools
+#   MY_SKILLS_REPO         skills repo to vendor (default: tslator/my-skills)
+#   HTTP_PROXY/HTTPS_PROXY/NO_PROXY (either case) are forwarded to run
+#   containers; proxies with embedded credentials are rejected.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=lib/common.sh
+. "$SCRIPT_DIR/lib/common.sh"
+
+MY_SKILLS_REPO="${MY_SKILLS_REPO:-tslator/my-skills}"
+
+usage() {
+    cat <<'EOF'
+oc-dev — build and maintain the opencode-container image
+
+Usage: oc-dev <command> [args] [--help]
+
+Commands:
+  build [VERSION]        Build the image with auto-detected UID/GID; VERSION
+                         also accepted via $VERSION env (default: :latest tag)
+  build-builder-tools    Build only the builder-tools debug stage
+  build-latest           Look up the latest OpenCode npm release, build it,
+                         and tag it as :latest (needs curl + jq)
+  tag-latest VERSION     Tag opencode-container:VERSION as :latest
+  shell                  Interactive debug shell in the builder-tools image
+                         (mounts homebase/config/workspace/secrets from the repo)
+  skills                 Re-vendor vendor/my-skills at the vendor/my-skills.sha
+                         pin (needs gh auth for the private repo)
+  skills-bump            Re-pin vendor/my-skills.sha to upstream HEAD
+  herdr-skill            Regenerate config/skills/herdr/SKILL.md from the
+                         built image's pinned herdr binary
+  clean                  Remove the opencode-container image
+  prune-cache            Force-prune the engine's build cache
+
+Environment:
+  CONTAINER_ENGINE  podman or docker (auto-detected if unset)
+  VERSION           default version for build / build-builder-tools
+  MY_SKILLS_REPO    skills repo to vendor (default: tslator/my-skills)
+EOF
+}
+
+cmd_usage() {
+    usage
+    exit 0
+}
+
+# ensure_vendor [force] — clone the pinned my-skills checkout when missing or
+# older than the sha pin (replicates the Makefile file-target dependency).
+ensure_vendor() {
+    local force="${1:-}" sha
+    sha="$(cat "$REPO_DIR/vendor/my-skills.sha" 2>/dev/null || true)"
+    [ -n "$sha" ] || die "vendor/my-skills.sha is empty"
+    if [ "$force" != "--force" ] && [ -d "$REPO_DIR/vendor/my-skills" ] \
+            && [ "$REPO_DIR/vendor/my-skills" -nt "$REPO_DIR/vendor/my-skills.sha" ]; then
+        return 0
+    fi
+    command -v gh >/dev/null 2>&1 || die "gh CLI required to clone $MY_SKILLS_REPO"
+    rm -rf "$REPO_DIR/vendor/my-skills"
+    mkdir -p "$REPO_DIR/vendor"
+    gh repo clone "$MY_SKILLS_REPO" "$REPO_DIR/vendor/my-skills" -- --quiet
+    (cd "$REPO_DIR/vendor/my-skills" && git checkout --quiet "$sha" && rm -rf .git .[!.]*)
+    echo "vendored $MY_SKILLS_REPO@$sha"
+}
+
+cmd_build() {
+    case "${1:-}" in --help) cmd_usage ;; esac
+    local version="${1:-${VERSION:-}}"
+    local version_args=()
+    [ -n "$version" ] && version_args=(--build-arg "OPENCODE_VERSION=$version")
+    ensure_vendor
+    detect_engine
+    echo "Building opencode-container${version:+:$version}..."
+    "$ENGINE" build \
+        --build-arg "USER_UID=$(id -u)" \
+        --build-arg "USER_GID=$(id -g)" \
+        "${version_args[@]}" \
+        -t "opencode-container${version:+:$version}" \
+        "$REPO_DIR"
+}
+
+cmd_build_builder_tools() {
+    case "${1:-}" in --help) cmd_usage ;; esac
+    local version="${1:-${VERSION:-}}"
+    local version_args=()
+    [ -n "$version" ] && version_args=(--build-arg "OPENCODE_VERSION=$version")
+    detect_engine
+    "$ENGINE" build \
+        --build-arg "USER_UID=$(id -u)" \
+        --build-arg "USER_GID=$(id -g)" \
+        "${version_args[@]}" \
+        --target builder-tools \
+        -t opencode-container:builder-tools \
+        "$REPO_DIR"
+}
+
+cmd_tag_latest() {
+    case "${1:-}" in --help) cmd_usage ;; esac
+    local version="${1:-${VERSION:-}}"
+    [ -n "$version" ] || die "VERSION is required. Usage: oc-dev tag-latest 2.0.9"
+    detect_engine
+    "$ENGINE" tag "opencode-container:$version" opencode-container:latest
+}
+
+cmd_build_latest() {
+    case "${1:-}" in --help) cmd_usage ;; esac
+    command -v curl >/dev/null 2>&1 || die "curl required for build-latest"
+    command -v jq >/dev/null 2>&1 || die "jq required for build-latest"
+    local version
+    version="$(curl -fsSL https://registry.npmjs.org/%40opencode%2Fcli | jq -r '."dist-tags".latest')"
+    [ -n "$version" ] && [ "$version" != "null" ] || die "could not read latest version from npm registry"
+    cmd_build "$version"
+    cmd_tag_latest "$version"
+}
+
+cmd_shell() {
+    case "${1:-}" in --help) cmd_usage ;; esac
+    detect_engine
+    init_proxy
+    proxy_env_args
+    mkdir -p "$REPO_DIR/homebase" "$REPO_DIR/config" "$REPO_DIR/workspace" "$REPO_DIR/secrets"
+    "$ENGINE" run --rm -it --workdir /workspace --read-only \
+        --tmpfs /tmp:exec,size=512m,mode=1777 --cap-drop=ALL \
+        --security-opt=no-new-privileges --memory=2g --cpus=2 \
+        -v "$REPO_DIR/homebase:/app:rw,Z" \
+        -v "$REPO_DIR/config:/app/.config/opencode:rw,Z" \
+        -v "$REPO_DIR/workspace:/workspace:rw,Z" \
+        -v "$REPO_DIR/secrets:/run/secrets:ro,Z" \
+        "${PROXY_ENV_ARGS[@]}" \
+        --entrypoint /bin/bash \
+        opencode-container:builder-tools
+}
+
+cmd_skills() {
+    case "${1:-}" in --help) cmd_usage ;; esac
+    ensure_vendor --force
+}
+
+cmd_skills_bump() {
+    case "${1:-}" in --help) cmd_usage ;; esac
+    command -v gh >/dev/null 2>&1 || die "gh CLI required for skills-bump"
+    local sha
+    sha="$(gh api "repos/$MY_SKILLS_REPO/commits/HEAD" --jq .sha)" || die "gh api failed for $MY_SKILLS_REPO"
+    echo "$sha" > "$REPO_DIR/vendor/my-skills.sha"
+    echo "pinned $MY_SKILLS_REPO@$sha"
+}
+
+cmd_herdr_skill() {
+    case "${1:-}" in --help) cmd_usage ;; esac
+    detect_engine
+    mkdir -p "$REPO_DIR/config/skills/herdr"
+    "$ENGINE" run --rm --entrypoint herdr opencode-container:latest --skill \
+        > "$REPO_DIR/config/skills/herdr/SKILL.md"
+    echo "regenerated config/skills/herdr/SKILL.md"
+}
+
+cmd_clean() {
+    case "${1:-}" in --help) cmd_usage ;; esac
+    detect_engine
+    "$ENGINE" rmi opencode-container || true
+}
+
+cmd_prune_cache() {
+    case "${1:-}" in --help) cmd_usage ;; esac
+    detect_engine
+    "$ENGINE" builder prune -f
+}
+
+main() {
+    local cmd="${1:-}"
+    [ $# -gt 0 ] && shift
+    case "$cmd" in
+        ""|-h|--help|help) cmd_usage ;;
+        build) cmd_build "$@" ;;
+        build-builder-tools) cmd_build_builder_tools "$@" ;;
+        build-latest) cmd_build_latest "$@" ;;
+        tag-latest) cmd_tag_latest "$@" ;;
+        shell) cmd_shell "$@" ;;
+        skills) cmd_skills "$@" ;;
+        skills-bump) cmd_skills_bump "$@" ;;
+        herdr-skill) cmd_herdr_skill "$@" ;;
+        clean) cmd_clean "$@" ;;
+        prune-cache) cmd_prune_cache "$@" ;;
+        *)
+            echo "oc-dev: unknown command '$cmd' (see oc-dev --help)" >&2
+            exit 2
+            ;;
+    esac
+}
+
+main "$@"
