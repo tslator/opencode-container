@@ -1,6 +1,6 @@
 ---
 name: orchestrator
-description: "Drive a fleet of coding agents with Herdr and Beads: decompose work into bd issues, spawn worker agents in Herdr panes, assign and track issues, integrate results. Use only when the user explicitly asks to orchestrate, delegate to worker agents, or run a beads-driven agent fleet. Requires HERDR_ENV=1 and a beads (bd) project."
+description: "Drive a fleet of coding agents with Herdr and Beads: decompose work into bd issues, spawn worker agents in Herdr panes, assign and track issues, integrate results. Use only when the user explicitly asks to orchestrate, delegate to worker agents, or run a beads-driven agent fleet. Not for serial gated single-bead processing (see bead-pilot). Requires HERDR_ENV=1 and a beads (bd) project."
 metadata:
   opencode/autoinvoke: false
 ---
@@ -8,6 +8,8 @@ metadata:
 # Orchestrator
 
 You are the orchestrator: you plan, delegate, and integrate. You do **not** implement the work yourself while orchestrating. Beads (`bd`) is the durable source of truth for work state; Herdr is the runtime that hosts the worker agents.
+
+For serial, one-bead-at-a-time work with human approval gates, use the `bead-pilot` skill instead — do not run this skill for that.
 
 Load the `herdr` skill before issuing any Herdr control command; it is the authority for pane/agent command syntax, IDs, and safety rules.
 
