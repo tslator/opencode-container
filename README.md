@@ -24,9 +24,11 @@ Run it with the canonical launcher:
 # Build the image
 ./bin/oc-dev build
 
+# Create ~/.opencode-container/ and seed default config (optional;
+# normal runs self-create it, init just makes the first step explicit)
+bin/opencode-container init
+
 # Add a provider API key (one-time)
-mkdir -p ~/.opencode-container/secrets
-chmod 700 ~/.opencode-container/secrets
 echo "your-api-key" > ~/.opencode-container/secrets/anthropic_api_key
 chmod 600 ~/.opencode-container/secrets/*
 
@@ -45,6 +47,8 @@ The `bin/opencode-container` script is the recommended way to run OpenCode Conta
 - Reads secrets from `~/.opencode-container/secrets/`
 - Uses the current directory as the workspace
 - Works from any directory once added to your PATH
+
+Run `bin/opencode-container init` once to create `~/.opencode-container/` and seed the default config up front; it is idempotent and never overwrites your edits (normal launches also self-create the state dirs, so init is convenience, not a requirement).
 
 #### Options
 

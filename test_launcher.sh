@@ -256,4 +256,38 @@ PATH="$TEST_DIR/bin:$PATH" \
 OPENCODE_CONTAINER_REPO="$TEST_DIR/repo" \
   "$ROOT_DIR/bin/opencode-container" bdui-service bogus && exit 1
 
+# --- init subcommand ----------------------------------------------------------
+# fresh home: creates state dirs, seeds config + bdui wrapper, no engine call
+ARGS_FILE="$TEST_DIR/args_init" \
+HOME="$TEST_DIR/home3" \
+PATH="$TEST_DIR/bin:$PATH" \
+OPENCODE_CONTAINER_REPO="$TEST_DIR/repo" \
+  "$ROOT_DIR/bin/opencode-container" init > "$TEST_DIR/init_out"
+grep -F "initialized" "$TEST_DIR/init_out"
+[ ! -e "$TEST_DIR/args_init" ]
+[ -d "$TEST_DIR/home3/.opencode-container/.config" ]
+[ -d "$TEST_DIR/home3/.opencode-container/config" ]
+[ -d "$TEST_DIR/home3/.opencode-container/secrets" ]
+[ "$(stat -c '%a' "$TEST_DIR/home3/.opencode-container")" = 700 ]
+[ "$(stat -c '%a' "$TEST_DIR/home3/.opencode-container/secrets")" = 700 ]
+cmp -s "$ROOT_DIR/systemd/bdui-serve.sh" "$TEST_DIR/home3/.opencode-container/bdui-serve.sh"
+
+# seed repo config defaults
+mkdir -p "$TEST_DIR/repo/config"
+echo '{"seeded":true}' > "$TEST_DIR/repo/config/opencode.json"
+HOME="$TEST_DIR/home3" \
+PATH="$TEST_DIR/bin:$PATH" \
+OPENCODE_CONTAINER_REPO="$TEST_DIR/repo" \
+  "$ROOT_DIR/bin/opencode-container" init > "$TEST_DIR/init_out2"
+grep -F "already initialized" "$TEST_DIR/init_out2"
+grep -F '"seeded":true' "$TEST_DIR/home3/.opencode-container/config/opencode.json"
+
+# re-run never overwrites user edits
+echo '{"user":true}' > "$TEST_DIR/home3/.opencode-container/config/opencode.json"
+HOME="$TEST_DIR/home3" \
+PATH="$TEST_DIR/bin:$PATH" \
+OPENCODE_CONTAINER_REPO="$TEST_DIR/repo" \
+  "$ROOT_DIR/bin/opencode-container" init >/dev/null
+grep -F '"user":true' "$TEST_DIR/home3/.opencode-container/config/opencode.json"
+
 echo "launcher mount and environment checks passed"

@@ -21,6 +21,9 @@
 #   -h, --help          Show this help
 #
 # Subcommands:
+#   init                Create ~/.opencode-container/ (if missing) and seed it
+#                       with defaults: state dirs, repo config files (existing
+#                       files are never overwritten), and the bdui host wrapper.
 #   skills <installer args...>
 #                       Manage the baked my-skills library via the in-image
 #                       installer (list|status|enable|disable|gate|...).
@@ -56,6 +59,10 @@ Options:
   -h, --help           Show this help
 
 Subcommands:
+  init
+      Create ~/.opencode-container/ and seed defaults (state dirs, repo
+      config files without overwriting existing ones, bdui host wrapper).
+      Safe to re-run; normal launches also self-create the state dirs.
   skills <installer args...>
       Manage the baked my-skills library with the in-image installer
       (list|status|enable|disable|gate|...). --global edits the global
@@ -156,6 +163,54 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+ocd_dir="$HOME/.opencode-container"
+repo_dir="${OPENCODE_CONTAINER_REPO:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+
+# Create the host state dir and seed defaults. With force=1, repo config files
+# overwrite existing ones (-u/--update-config); otherwise only missing files
+# are copied. Shared by normal launches and the `init` subcommand.
+setup_state_dirs() {
+    local force="${1:-0}"
+    # One-time migration from the pre-rename docker-only state dir
+    if [ -d "$HOME/.opencode-docker" ] && [ ! -d "$ocd_dir" ]; then
+        mv "$HOME/.opencode-docker" "$ocd_dir"
+    fi
+    # .config must exist before the engine mounts config at /app/.config/opencode;
+    # otherwise the engine creates it as container-root (uid 100000) and herdr
+    # cannot create /app/.config/herdr later.
+    mkdir -p "$ocd_dir/.config" "$ocd_dir/config" "$ocd_dir/secrets"
+    chmod 700 "$ocd_dir" "$ocd_dir/config" "$ocd_dir/secrets"
+
+    # Seed the host bdui service wrapper used by systemd/bdui.service (see README
+    # "Bundled web UI"); kept in sync with the repo copy on every launch.
+    if [ -f "$repo_dir/systemd/bdui-serve.sh" ] \
+            && ! cmp -s "$repo_dir/systemd/bdui-serve.sh" "$ocd_dir/bdui-serve.sh" 2>/dev/null; then
+        cp "$repo_dir/systemd/bdui-serve.sh" "$ocd_dir/bdui-serve.sh"
+        chmod +x "$ocd_dir/bdui-serve.sh"
+    fi
+
+    if [ -d "$repo_dir/config" ]; then
+        if [ "$force" = 1 ]; then
+            cp -a "$repo_dir/config/." "$ocd_dir/config/"
+        else
+            cp -a --update=none "$repo_dir/config/." "$ocd_dir/config/"
+        fi
+    fi
+}
+
+# init subcommand: standalone first-time setup (no engine, no workspace needed).
+if [ "${1:-}" = "init" ]; then
+    if [ -d "$ocd_dir" ]; then
+        setup_state_dirs 0
+        echo "already initialized; missing defaults re-seeded: $ocd_dir"
+    else
+        setup_state_dirs 0
+        echo "initialized $ocd_dir (config seeded from $repo_dir/config)"
+        echo "next: add provider keys to $ocd_dir/secrets/ (e.g. anthropic_api_key)"
+    fi
+    exit 0
+fi
+
 detect_engine
 
 if [ "$HOST_ACCESS" = 1 ]; then
@@ -179,26 +234,7 @@ if [ "$OPENCODE_HELP" = 1 ]; then
     exec "$ENGINE" run --rm -i opencode-container:latest --help
 fi
 
-ocd_dir="$HOME/.opencode-container"
-# One-time migration from the pre-rename docker-only state dir
-if [ -d "$HOME/.opencode-docker" ] && [ ! -d "$ocd_dir" ]; then
-    mv "$HOME/.opencode-docker" "$ocd_dir"
-fi
-repo_dir="${OPENCODE_CONTAINER_REPO:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-
-# .config must exist before the engine mounts config at /app/.config/opencode;
-# otherwise the engine creates it as container-root (uid 100000) and herdr
-# cannot create /app/.config/herdr later.
-mkdir -p "$ocd_dir/.config" "$ocd_dir/config" "$ocd_dir/secrets"
-chmod 700 "$ocd_dir" "$ocd_dir/config" "$ocd_dir/secrets"
-
-# Seed the host bdui service wrapper used by systemd/bdui.service (see README
-# "Bundled web UI"); kept in sync with the repo copy on every launch.
-if [ -f "$repo_dir/systemd/bdui-serve.sh" ] \
-        && ! cmp -s "$repo_dir/systemd/bdui-serve.sh" "$ocd_dir/bdui-serve.sh" 2>/dev/null; then
-    cp "$repo_dir/systemd/bdui-serve.sh" "$ocd_dir/bdui-serve.sh"
-    chmod +x "$ocd_dir/bdui-serve.sh"
-fi
+setup_state_dirs "$UPDATE_CONFIG"
 
 # bdui-service subcommand: manage the host-level beads-ui systemd user
 # service (see systemd/bdui.service and README "Host bdui service").
@@ -361,14 +397,6 @@ if [ -f "$ocd_dir/bdui-workspaces.txt" ]; then
         [ -n "$ws" ] && [ -d "$ws/.beads" ] && printf '%s\n' "$ws" >> "$bdui_tmp"
     done < "$ocd_dir/bdui-workspaces.txt"
     mv "$bdui_tmp" "$ocd_dir/bdui-workspaces.txt"
-fi
-
-if [ -d "$repo_dir/config" ]; then
-  if [ "$UPDATE_CONFIG" = 1 ]; then
-    cp -a "$repo_dir/config/." "$ocd_dir/config/"
-  else
-    cp -a --update=none "$repo_dir/config/." "$ocd_dir/config/"
-  fi
 fi
 
 # Forward host proxy settings (both cases; tools differ on which they read)
