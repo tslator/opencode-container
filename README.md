@@ -227,6 +227,16 @@ Because every workspace mounts at `/workspace` inside the container, OpenCode wo
 
 The image bakes the [my-skills](https://github.com/tslator/my-skills) skill library at `/opt/my-skills` (stable symlink: `/opt/skills`), root-owned so the agent cannot edit its own skill sources. No network access or `--host-access` is involved: skill content ships in the image, and enablement is plain OpenCode configuration — the native `skills` key in `opencode.json` lists directories to discover skills from.
 
+### Bundled repo skills
+
+Besides the vendored library, this repo ships its own skills in `config/skills/`:
+
+| Skill | Purpose |
+|-------|---------|
+| `herdr` | Control the Herdr multiplexer (panes, tabs, agents) from inside a Herdr-managed pane |
+| `orchestrator` | Drive a fleet of Herdr worker agents with beads: decompose, dispatch, integrate |
+| `bead-pilot` | Process beads serially, one at a time, with approval gates between claim, implement, summarize, and close & commit (plan: `docs/plan-bead-pilot-skill.md`) |
+
 ### Global vs project layering
 
 | Layer | File | For |
