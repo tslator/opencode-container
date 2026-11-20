@@ -11,7 +11,7 @@
 #   shell                  Interactive debug shell (builder-tools stage, has bash)
 #   skills                 Re-vendor the pinned my-skills checkout (requires gh)
 #   skills-bump            Re-pin vendor/my-skills.sha to upstream HEAD
-#   herdr-skill            Regenerate config/skills/herdr/SKILL.md from the image
+#   herdr-skill            Regenerate the herdr skill into ~/.opencode-container/config/skills/
 #   clean                  Remove the opencode-container image
 #   prune-cache            Prune the engine's build cache
 #
@@ -49,7 +49,8 @@ Commands:
   skills                 Re-vendor vendor/my-skills at the vendor/my-skills.sha
                          pin (needs gh auth for the private repo)
   skills-bump            Re-pin vendor/my-skills.sha to upstream HEAD
-  herdr-skill            Regenerate config/skills/herdr/SKILL.md from the
+  herdr-skill            Regenerate the herdr skill into
+                         ~/.opencode-container/config/skills/herdr/ from the
                          built image's pinned herdr binary
   clean                  Remove the opencode-container image
   prune-cache            Force-prune the engine's build cache
@@ -169,10 +170,11 @@ cmd_skills_bump() {
 cmd_herdr_skill() {
     case "${1:-}" in --help) cmd_usage ;; esac
     detect_engine
-    mkdir -p "$REPO_DIR/config/skills/herdr"
+    local dest="$HOME/.opencode-container/config/skills/herdr"
+    mkdir -p "$dest"
     "$ENGINE" run --rm --entrypoint herdr opencode-container:latest --skill \
-        > "$REPO_DIR/config/skills/herdr/SKILL.md"
-    echo "regenerated config/skills/herdr/SKILL.md"
+        > "$dest/SKILL.md"
+    echo "regenerated $dest/SKILL.md"
 }
 
 cmd_clean() {
