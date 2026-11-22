@@ -120,7 +120,7 @@ def test_beads_auto_init_runs_when_opted_in() -> None:
             which=lambda name: "/usr/local/bin/bd",
             workspace=workspace,
         )
-        assert calls == [(["bd", "init", "--quiet"], str(workspace))]
+        assert calls == [(["bd", "init", "--quiet", "--role=maintainer"], str(workspace))]
 
 
 def test_beads_auto_init_skipped_when_initialized() -> None:

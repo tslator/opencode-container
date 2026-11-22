@@ -67,7 +67,7 @@ def beads_auto_init(
     if which("bd") is None:
         print("warning: OPENCODE_CONTAINER_BEADS=1 but bd is not on PATH", file=sys.stderr)
         return
-    result = run(["bd", "init", "--quiet"], cwd=str(workspace), check=False)
+    result = run(["bd", "init", "--quiet", "--role=maintainer"], cwd=str(workspace), check=False)
     if getattr(result, "returncode", 0) != 0:
         print(f"warning: bd init exited with status {result.returncode}", file=sys.stderr)
 
