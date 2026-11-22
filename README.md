@@ -239,7 +239,7 @@ Fleet/workflow skills (`fleet-orchestrator`, `fleet-bead-pilot`) live in the my-
 
 | Layer | File | For |
 |-------|------|-----|
-| Global | `~/.opencode-container/config/opencode.json` | how-you-work skills (workflow, orchestration, `meta-skill-library-admin`) |
+| Global | `~/.opencode-container/config/opencode.json` | how-you-work skills (workflow, orchestration, all meta-skills) |
 | Project | `<project>/opencode.json` (or `.opencode/opencode.json`) | language/domain skills (e.g. Python) |
 
 Project entries **append** to global ones (both layers are active together), edits are picked up live by the config watcher — no restart — and unknown paths degrade with a warning instead of failing.
@@ -259,9 +259,9 @@ opencode-container skills disable --global
 opencode-container skills list
 ```
 
-`skills <args...>` runs the image-baked installer (`/opt/my-skills/scripts/install_skills.py`) in a one-shot hardened container; `--global` maps to the mounted global config, `--project DIR` mounts `DIR`. Inside a session, the baked `meta-skill-library-admin` skill (default-enabled) can interview you and curate per-skill selections directly.
+`skills <args...>` runs the image-baked installer (`/opt/my-skills/scripts/install_skills.py`) in a one-shot hardened container; `--global` maps to the mounted global config, `--project DIR` mounts `DIR`. Inside a session, the baked meta-skills (all default-enabled) can interview you and curate per-skill selections directly.
 
-**First run:** the default config enables only `meta-skill-library-admin`. Just ask the agent — e.g. "help me choose skills for this project" — and it will walk the taxonomy with you and write the right config layer. Existing state dirs predate the default; run `opencode-container -u` once (or `opencode-container skills enable --global`) to adopt it.
+**First run:** the default config enables all baked meta-skills (`meta-skill-library-admin`, `meta-skill-eng-brief`, `meta-skill-eng-review`) via the `/opt/skills/meta-skills` directory entry. Just ask the agent — e.g. "help me choose skills for this project" — and it will walk the taxonomy with you and write the right config layer. Existing state dirs predate the default; run `opencode-container -u` once (or `opencode-container skills enable --global`) to adopt it.
 
 ### Updating skill content
 

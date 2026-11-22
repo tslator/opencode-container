@@ -42,9 +42,9 @@ if [ "$ENGINE" = podman ]; then
     rm "$TEST_DIR/img.tar"
 fi
 
-# --- Scenario B (global): default config seeds the general skill -----------
+# --- Scenario B (global): default config seeds all meta-skills -------------
 cp "$ROOT_DIR/config/opencode.json" "$FAKE_HOME/.opencode-container/config/opencode.json"
-grep -F -- '/opt/skills/meta-skills/meta-skill-library-admin' \
+grep -F -- '/opt/skills/meta-skills' \
     "$FAKE_HOME/.opencode-container/config/opencode.json"
 
 # --- Scenario C (project): launcher passthrough enables the language layer --
@@ -104,7 +104,7 @@ USERNS=()
     -v "$FAKE_HOME/.opencode-container/config:/app/.config/opencode:rw,Z" \
     -v "$PROJ:/workspace:rw,Z" \
     -v "$TEST_DIR/driver.py:/driver.py:ro,Z" \
-    "$IMAGE" /driver.py meta-skill-library-admin python-debugging
+    "$IMAGE" /driver.py meta-skill-library-admin meta-skill-eng-brief meta-skill-eng-review python-debugging
 
 # --- Gate enforcement: skill.use deny removes the skill (opencode >=2.2.3) --
 mkdir -p "$TEST_DIR/gate/.config/opencode" "$TEST_DIR/gate/proj"

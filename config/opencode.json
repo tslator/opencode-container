@@ -12,5 +12,5 @@
   },
   "permission": "allow",
   "plugin": [],
-  "skills": ["/opt/skills/meta-skills/meta-skill-library-admin"]
+  "skills": ["/opt/skills/meta-skills"]
 }
