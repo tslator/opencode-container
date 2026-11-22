@@ -89,7 +89,9 @@ cmd_build() {
     case "${1:-}" in --help) cmd_usage ;; esac
     local version="${1:-${VERSION:-}}"
     local version_args=()
-    [ -n "$version" ] && version_args=(--build-arg "OPENCODE_VERSION=$version")
+    # Custom versions carry a different tarball hash; empty SHA256 makes the
+    # Dockerfile fall back to the registry-reported integrity check.
+    [ -n "$version" ] && version_args=(--build-arg "OPENCODE_VERSION=$version" --build-arg "OPENCODE_SHA256=")
     ensure_vendor
     detect_engine
     echo "Building opencode-container${version:+:$version}..."
@@ -105,7 +107,7 @@ cmd_build_builder_tools() {
     case "${1:-}" in --help) cmd_usage ;; esac
     local version="${1:-${VERSION:-}}"
     local version_args=()
-    [ -n "$version" ] && version_args=(--build-arg "OPENCODE_VERSION=$version")
+    [ -n "$version" ] && version_args=(--build-arg "OPENCODE_VERSION=$version" --build-arg "OPENCODE_SHA256=")
     detect_engine
     "$ENGINE" build \
         --build-arg "USER_UID=$(id -u)" \

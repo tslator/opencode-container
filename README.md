@@ -331,7 +331,7 @@ bin/oc-dev shell                        # Debug shell (builder-tools stage with 
 bin/oc-dev clean                        # Remove image
 ```
 
-The version examples above match `ARG OPENCODE_VERSION` in the Dockerfile; check there for the current default.
+The version examples above match `ARG OPENCODE_VERSION` in the Dockerfile; check there for the current default. The binary is pinned by tarball hash (`ARG OPENCODE_SHA256`); `bin/oc-dev build <version>` overrides both (empty hash falls back to the npm registry's integrity check). To bump manually: fetch the new hash with `curl -fsSL "https://registry.npmjs.org/@opencode%2fcli-linux-x64/-/cli-linux-x64-<version>.tgz" | sha256sum`.
 
 ### Manual Container Run
 
@@ -402,6 +402,6 @@ The image uses a multi-stage build with a distroless runtime:
 - **Base:** `gcr.io/distroless/base-debian13` (no package manager; Debian `dash` is added as `/bin/sh` for OpenCode's shell tool and npm)
 - **Node.js:** Node 24 from NodeSource, runtime dependencies extracted via `collect-runtime-deps.sh`
 - **Python:** Python 3 with venv support from Debian 13, plus pinned [uv](https://github.com/astral-sh/uv) release binaries (`uv`, `uvx`) for fast package/project management
-- **OpenCode:** installed via the official, checksum-verified installer in the build stage
+- **OpenCode:** installed from the checksum-verified npm platform tarball (`@opencode/cli-linux-x64`), pinned via `OPENCODE_VERSION` + `OPENCODE_SHA256`
 - **Runtime collector:** resolves and verifies every executable in the Dockerfile manifest before the final image is assembled
 - **Bootstrap:** `bootstrap.py` loads supported secrets from `/run/secrets`, then execs OpenCode

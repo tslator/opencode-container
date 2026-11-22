@@ -6,6 +6,10 @@ ARG USER_UID=1000
 ARG USER_GID=1000
 ARG NODE_MAJOR=24
 ARG OPENCODE_VERSION=2.3.0
+# sha256 of the npm platform tarball for OPENCODE_VERSION. Set empty to fall
+# back to the sha512 integrity reported by the npm registry (weaker: the
+# registry vouches for its own bytes).
+ARG OPENCODE_SHA256=408f854b5fac7857a3b4df4e783d3a8b70f5cc8c7c3187aac09c5be0576c14ae
 ARG BDUI_VERSION=0.12.6
 
 # BuildKit supplies proxy build arguments from the builder environment. They are
@@ -80,13 +84,25 @@ RUN export http_proxy="${http_proxy:-${HTTP_PROXY:-}}" https_proxy="${https_prox
     npm install --global --no-audit --no-fund npm@12.0.2 && \
     rm -rf /var/lib/apt/lists/*
 
+# Install OpenCode from the npm platform tarball instead of the opencode.ai
+# installer script: the installer gets republished without version changes,
+# which breaks its pinned hash. The tarball is content-addressed, so
+# OPENCODE_VERSION + OPENCODE_SHA256 pin the exact binary bytes.
+# Target is glibc linux-x64 with AVX2 (the installer default on such CPUs).
 RUN export http_proxy="${http_proxy:-${HTTP_PROXY:-}}" https_proxy="${https_proxy:-${HTTPS_PROXY:-}}" no_proxy="${no_proxy:-${NO_PROXY:-}}"; \
     echo "Installing OpenCode version: ${OPENCODE_VERSION}" && \
-    curl -fsSL https://opencode.ai/v2/install -o /tmp/install-opencode.sh && \
-    echo "bbc4584fd6a888bcd14623b8a63afa0f1b4075a2e84a2c3518cd509b446b3135  /tmp/install-opencode.sh" | sha256sum -c - && \
-    bash /tmp/install-opencode.sh --version "${OPENCODE_VERSION}" --no-modify-path && \
-    rm -f /tmp/install-opencode.sh && \
-    install -m 0755 /root/.opencode/bin/opencode /usr/local/bin/opencode
+    curl -fsSL "https://registry.npmjs.org/@opencode%2fcli-linux-x64/-/cli-linux-x64-${OPENCODE_VERSION}.tgz" -o /tmp/opencode.tgz && \
+    if [ -n "${OPENCODE_SHA256}" ]; then \
+      echo "${OPENCODE_SHA256}  /tmp/opencode.tgz" | sha256sum -c -; \
+    else \
+      echo "WARNING: OPENCODE_SHA256 empty; checking registry-reported integrity only" >&2; \
+      integrity=$(curl -fsSL "https://registry.npmjs.org/@opencode%2fcli-linux-x64/${OPENCODE_VERSION}" | jq -r '.dist.integrity'); \
+      [ "sha512-$(openssl dgst -sha512 -binary /tmp/opencode.tgz | openssl base64 -A)" = "$integrity" ]; \
+    fi && \
+    tar xzf /tmp/opencode.tgz -C /tmp && \
+    install -m 0755 /tmp/package/bin/opencode /usr/local/bin/opencode && \
+    rm -rf /tmp/opencode.tgz /tmp/package && \
+    opencode --version
 
 RUN export http_proxy="${http_proxy:-${HTTP_PROXY:-}}" https_proxy="${https_proxy:-${HTTPS_PROXY:-}}" no_proxy="${no_proxy:-${NO_PROXY:-}}"; \
     npm install --global --no-audit --no-fund "beads-ui@${BDUI_VERSION}" && \
