@@ -11,6 +11,12 @@ from pathlib import Path
 
 SECRETS_DIR = Path("/run/secrets")
 WORKSPACE_DIR = Path("/workspace")
+# Commands vendored from my-skills (see Dockerfile "COPY vendor/my-skills").
+# Symlinking the whole directory into the global commands dir namespaces them
+# as /my-skills-commands/<name>, so host-defined commands in
+# ~/.opencode-container/config/commands/ can never collide with them.
+VENDOR_COMMANDS_TARGET = Path("/opt/my-skills/commands")
+VENDOR_COMMANDS_LINK_NAME = "my-skills-commands"
 HERDR_SERVER_TIMEOUT_SECONDS = 15.0
 SUPPORTED_SECRET_NAMES = {
     "ANTHROPIC_API_KEY",
@@ -70,6 +76,51 @@ def beads_auto_init(
     result = run(["bd", "init", "--quiet", "--role=maintainer"], cwd=str(workspace), check=False)
     if getattr(result, "returncode", 0) != 0:
         print(f"warning: bd init exited with status {result.returncode}", file=sys.stderr)
+
+
+def link_vendor_commands(
+    environ: dict[str, str] | None = None,
+    target: Path | None = None,
+) -> None:
+    """Expose my-skills commands as /my-skills-commands/<name> in OpenCode.
+
+    OpenCode only discovers global commands from $XDG_CONFIG_HOME/opencode/
+    commands/, which is bind-mounted from the host and therefore host-owned.
+    Symlinking the image-baked, root-owned command dir into it under a fixed
+    link name keeps the vendored commands read-only and namespaced, with no
+    merging against host commands. The link is stored on the host volume and
+    only resolves in-container, where /opt/my-skills exists. Warn-never-block:
+    a bad link state must not stop OpenCode from starting.
+    """
+    environ = os.environ if environ is None else environ
+    target = VENDOR_COMMANDS_TARGET if target is None else target
+    if not target.is_dir():
+        return
+    link = (
+        Path(environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config")))
+        / "opencode"
+        / "commands"
+        / VENDOR_COMMANDS_LINK_NAME
+    )
+    try:
+        if link.is_symlink():
+            if link.readlink() != target:
+                print(
+                    f"warning: {link} points to {link.readlink()}, expected {target}; "
+                    "leaving as-is",
+                    file=sys.stderr,
+                )
+            return
+        if link.exists():
+            print(
+                f"warning: {link} is a real file or directory; vendor commands not linked",
+                file=sys.stderr,
+            )
+            return
+        link.parent.mkdir(parents=True, exist_ok=True)
+        os.symlink(target, link)
+    except OSError as error:
+        print(f"warning: could not link vendor commands: {error}", file=sys.stderr)
 
 
 # Subcommands that accept --standalone/--server (server-backed clients).
@@ -219,6 +270,7 @@ def start_bdui(
 def bootstrap(args: list[str], execvp=os.execvp, environ: dict[str, str] | None = None) -> None:
     environ = os.environ if environ is None else environ
     load_secrets()
+    link_vendor_commands(environ)
     beads_auto_init(environ)
     start_bdui(environ)
     args = standalone_args(args)

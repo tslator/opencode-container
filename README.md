@@ -272,6 +272,28 @@ bin/oc-dev skills-bump   # re-pin vendor/my-skills.sha to upstream HEAD
 bin/oc-dev build         # re-vendor the checkout and rebuild the image
 ```
 
+## Commands Library
+
+The same my-skills checkout can ship slash commands via a top-level `commands/`
+directory (`.md` files; body is the prompt template, optional frontmatter:
+`description`, `agent`, `model`, `subagent`). At container start, `bootstrap.py`
+symlinks `/opt/my-skills/commands` into the mounted config dir as
+`~/.opencode-container/config/commands/my-skills-commands`, so library commands
+appear as `/my-skills-commands/<name>` — namespaced, read-only, and incapable of
+colliding with your own commands.
+
+| Layer | Path | Command name |
+|-------|------|--------------|
+| Library (image) | `/opt/my-skills/commands/review.md` | `/my-skills-commands/review` |
+| User global (host) | `~/.opencode-container/config/commands/review.md` | `/review` |
+| Project | `<project>/.opencode/commands/review.md` | `/review` (overrides global) |
+
+The symlink is created on the host volume but only resolves in-container (where
+`/opt/my-skills` exists), so it looks dangling on the host — that is expected.
+An existing real file/dir (or foreign symlink) at that name is never clobbered;
+bootstrap warns and skips. New library commands arrive via the same
+`skills-bump` + `build` cycle as skills.
+
 ## Advanced Usage
 
 ### Accessing Host Services

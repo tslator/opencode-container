@@ -94,6 +94,67 @@ class FakeResult:
         self.stdout = stdout
 
 
+def test_vendor_commands_link_created() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        target = Path(directory) / "opt" / "my-skills" / "commands"
+        target.mkdir(parents=True)
+        (target / "commit.md").write_text("Commit $ARGUMENTS.\n", encoding="utf-8")
+        config_home = Path(directory) / "config"
+        environ = {"XDG_CONFIG_HOME": str(config_home)}
+
+        bootstrap.link_vendor_commands(environ, target=target)
+
+        link = config_home / "opencode" / "commands" / "my-skills-commands"
+        assert link.is_symlink()
+        assert link.readlink() == target
+        assert (link / "commit.md").is_file()
+
+
+def test_vendor_commands_link_idempotent() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        target = Path(directory) / "commands"
+        target.mkdir()
+        environ = {"XDG_CONFIG_HOME": str(Path(directory) / "config")}
+        bootstrap.link_vendor_commands(environ, target=target)
+        bootstrap.link_vendor_commands(environ, target=target)
+        link = Path(environ["XDG_CONFIG_HOME"]) / "opencode" / "commands" / "my-skills-commands"
+        assert link.is_symlink() and link.readlink() == target
+
+
+def test_vendor_commands_skipped_without_target() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        config_home = Path(directory) / "config"
+        bootstrap.link_vendor_commands(
+            {"XDG_CONFIG_HOME": str(config_home)}, target=Path(directory) / "missing"
+        )
+        assert not (config_home / "opencode" / "commands" / "my-skills-commands").exists()
+
+
+def test_vendor_commands_never_clobbers_user_paths() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        target = Path(directory) / "commands"
+        target.mkdir()
+        config_home = Path(directory) / "config"
+        link = config_home / "opencode" / "commands" / "my-skills-commands"
+        link.mkdir(parents=True)
+        (link / "mine.md").write_text("user command\n", encoding="utf-8")
+
+        bootstrap.link_vendor_commands({"XDG_CONFIG_HOME": str(config_home)}, target=target)
+
+        assert link.is_dir() and not link.is_symlink()
+        assert (link / "mine.md").is_file()
+
+        other = Path(directory) / "elsewhere"
+        other.mkdir()
+        link2 = Path(directory) / "config2" / "opencode" / "commands" / "my-skills-commands"
+        link2.parent.mkdir(parents=True)
+        link2.symlink_to(other)
+
+        bootstrap.link_vendor_commands({"XDG_CONFIG_HOME": str(Path(directory) / "config2")}, target=target)
+
+        assert link2.is_symlink() and link2.readlink() == other
+
+
 def test_beads_auto_init_skipped_without_flag() -> None:
     calls: list[list[str]] = []
     bootstrap.beads_auto_init(
@@ -274,7 +335,9 @@ def test_herdr_skipped_without_usable_terminal() -> None:
 def test_lifecycle_order_and_arguments() -> None:
     events: list[str] = []
     original_loader = bootstrap.load_secrets
+    original_link = bootstrap.link_vendor_commands
     bootstrap.load_secrets = lambda: events.append("secrets")
+    bootstrap.link_vendor_commands = lambda environ=None: events.append("link")
     try:
         bootstrap.bootstrap(
             ["--model", "test"],
@@ -282,9 +345,11 @@ def test_lifecycle_order_and_arguments() -> None:
         )
     finally:
         bootstrap.load_secrets = original_loader
+        bootstrap.link_vendor_commands = original_link
 
     assert events == [
         "secrets",
+        "link",
         "exec:opencode:['opencode', '--standalone', '--model', 'test']",
     ]
 
@@ -344,6 +409,10 @@ if __name__ == "__main__":
     test_collisions_fail()
     test_unreadable_files_fail()
     test_invalid_utf8_fails()
+    test_vendor_commands_link_created()
+    test_vendor_commands_link_idempotent()
+    test_vendor_commands_skipped_without_target()
+    test_vendor_commands_never_clobbers_user_paths()
     test_beads_auto_init_skipped_without_flag()
     test_beads_auto_init_runs_when_opted_in()
     test_beads_auto_init_skipped_when_initialized()
